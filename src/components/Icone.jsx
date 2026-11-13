@@ -28,6 +28,7 @@ const P = {
   cadeado: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
   atualizar: <><path d="M20 12a8 8 0 1 1-2.3-5.6" /><path d="M20 4v5h-5" /></>,
   saude: <><path d="M3 12h4l2-5 4 10 2-5h6" /></>,
+  martelo: <><path d="m14 4 6 6M11.5 6.5l6 6M13 5l-6.5 6.5 4 4L17 9" /><path d="M8.5 13.5 3 19l2 2 5.5-5.5" /><path d="M13 21h8" /></>,
   relogio: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
 }
 export default function Icone({ nome, ...props }) {

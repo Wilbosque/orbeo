@@ -7,6 +7,8 @@ import { Campo, Carregando, Erro, Folha, Segmentado, Topo, useCarregar, useToast
 import { formatarCNJ, soDigitos, tipoAcaoSugerido, tribunalDoCNJ, validarCNJ } from '../lib/cnj.js'
 import { SITUACOES, TIPOS_ACAO, lerMoeda, mascararMoeda } from '../lib/formato.js'
 import { ClienteRapido } from './ClienteForm.jsx'
+import { AUD_VAZIA, CamposAudiencia, validarAudiencia } from '../components/Audiencias.jsx'
+import { montarISO } from '../lib/audiencia.js'
 
 const VAZIO = {
   numero_cnj: '', cliente_id: '', polo: 'reu', parte_contraria: '', tribunal: '', orgao_julgador: '', comarca: '',
@@ -34,6 +36,9 @@ export default function ProcessoForm() {
   const [erro, setErro] = useState('')
   const [folhaCliente, setFolhaCliente] = useState(false)
   const [listaClientes, setListaClientes] = useState([])
+  const [comAud, setComAud] = useState(false)
+  const [aud, setAud] = useState(AUD_VAZIA)
+  const setA = (k, v) => setAud(x => ({ ...x, [k]: v }))
 
   useEffect(() => { if (clientes) setListaClientes(clientes) }, [clientes])
   useEffect(() => {
@@ -60,16 +65,18 @@ export default function ProcessoForm() {
     cliente_id: !f.cliente_id ? 'Escolha o cliente.' : '',
     tribunal: !f.tribunal ? 'Informe o tribunal.' : '',
   }
-  const temErro = Object.values(erros).some(Boolean)
+  const errosAud = comAud ? validarAudiencia(aud) : {}
+  const temErro = Object.values(erros).some(Boolean) || Object.values(errosAud).some(Boolean)
 
   async function salvar(e) {
     e.preventDefault()
-    setTocado({ numero_cnj: true, cliente_id: true, tribunal: true })
+    setTocado({ numero_cnj: true, cliente_id: true, tribunal: true, aud: true })
     if (temErro) return
     setSalvando(true); setErro('')
     try {
       const salvo = await api.salvarProcesso({ ...f, id: editando ? id : undefined, valor_causa: lerMoeda(f.valor_causa) }, editando ? [] : colegas)
-      toast(editando ? 'Processo atualizado.' : 'Processo cadastrado.')
+      if (!editando && comAud) await api.salvarAudiencia({ ...aud, processo_id: salvo.id, data_hora: montarISO(aud.dia, aud.hora) })
+      toast(editando ? 'Processo atualizado.' : comAud ? 'Processo e audiência cadastrados.' : 'Processo cadastrado.')
       nav(`/processos/${salvo.id}`, { replace: true })
     } catch (err) { setErro(err.message) }
     finally { setSalvando(false) }
@@ -168,6 +175,20 @@ export default function ProcessoForm() {
         <Campo rotulo="Observações">
           <textarea className="entrada" value={f.observacoes || ''} onChange={e => set('observacoes', e.target.value)} />
         </Campo>
+
+        {!editando && (
+          <>
+            <label className="caixa-check">
+              <input type="checkbox" checked={comAud} onChange={e => setComAud(e.target.checked)} />
+              <div><b>Já tem audiência marcada</b><span>Cadastre agora para aparecer nos avisos e no calendário de audiências.</span></div>
+            </label>
+            {comAud && (
+              <div className="cartao form" style={{ boxShadow: 'none' }}>
+                <CamposAudiencia a={aud} set={setA} erros={tocado.aud ? errosAud : {}} />
+              </div>
+            )}
+          </>
+        )}
 
         <div className="barra-salvar">
           <button type="button" className="btn" onClick={() => nav(-1)}>Cancelar</button>

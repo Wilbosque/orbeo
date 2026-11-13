@@ -177,7 +177,7 @@ export async function resumo() {
     sb.from('processos').select('situacao'),
     sb.from('clientes').select('id', { count: 'exact', head: true }),
     sb.from('publicacoes').select('id', { count: 'exact', head: true }).eq('status', 'nova'),
-    sb.from('sugestoes').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
+    sb.from('sugestoes').select('tipo').eq('status', 'pendente'),
   ])
   const ps = ok(proc)
   return {
@@ -185,7 +185,9 @@ export async function resumo() {
     ativos: ps.filter(p => p.situacao === 'ativo').length,
     clientes: cli.count || 0,
     publicacoesNovas: pub.count || 0,
-    sugestoesPendentes: sug.count || 0,
+    sugestoesPendentes: (sug.data || []).length,
+    sugestoesSuspensao: (sug.data || []).filter(s => s.tipo === 'suspensao').length,
+    sugestoesAudiencia: (sug.data || []).filter(s => s.tipo === 'audiencia').length,
   }
 }
 
@@ -261,4 +263,36 @@ export const atualizarDataJud = processoId => invocar('datajud-sync', { acao: 'p
 export async function marcarVistas(processoId) { return ok(await sb.rpc('marcar_movimentacoes_vistas', { p_processo: processoId })) }
 export async function saudeConsultas() {
   return ok(await sb.from('sincronizacoes').select('*').order('iniciada_em', { ascending: false }).limit(30))
+}
+
+// ---------- Audiências ----------
+export async function listarAudiencias(f = {}) {
+  let q = sb.from('vw_audiencias').select('*')
+  if (f.processo_id) q = q.eq('processo_id', f.processo_id)
+  if (f.de) q = q.gte('data_hora', f.de)
+  if (f.ate) q = q.lte('data_hora', f.ate)
+  if (f.status) q = q.eq('status', f.status)
+  return ok(await q.order('data_hora', { ascending: !f.decrescente }).limit(f.limite || 500))
+}
+export async function salvarAudiencia(a) {
+  const campos = {
+    processo_id: a.processo_id, tipo: a.tipo, data_hora: a.data_hora, modalidade: a.modalidade,
+    local: a.local || null, link: a.link || null, status: a.status || 'agendada',
+    resultado: a.resultado || null, observacoes: a.observacoes || null, sugestao_id: a.sugestao_id || null,
+  }
+  return a.id
+    ? ok(await sb.from('audiencias').update(campos).eq('id', a.id).select().single())
+    : ok(await sb.from('audiencias').insert(campos).select().single())
+}
+export async function excluirAudiencia(id) { ok(await sb.from('audiencias').delete().eq('id', id)) }
+export async function sugestoesAudiencia() {
+  const sug = ok(await sb.from('sugestoes').select('*').eq('tipo', 'audiencia').eq('status', 'pendente').order('criado_em'))
+  if (!sug.length) return []
+  const procs = ok(await sb.from('vw_processos').select('id,numero_cnj,cliente_nome,polo,tribunal,orgao_julgador').in('id', sug.map(s => s.processo_id)))
+  return sug.map(s => ({ ...s, processo: procs.find(p => p.id === s.processo_id) })).filter(s => s.processo)
+}
+export async function aceitarSugestaoAudiencia(sg, audiencia) {
+  const salva = await salvarAudiencia({ ...audiencia, processo_id: sg.processo_id, sugestao_id: sg.id })
+  ok(await sb.from('sugestoes').update({ status: 'aceita', decidido_por: await uid(), decidido_em: new Date().toISOString() }).eq('id', sg.id))
+  return salva
 }

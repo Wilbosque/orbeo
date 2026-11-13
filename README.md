@@ -50,6 +50,12 @@ clientes exclusivos; nesse caso, desative o acesso.
 A chave pública do DataJud já vem no código. Se o CNJ trocar a chave, cadastre a nova em
 Edge Functions → Secrets com o nome `DATAJUD_API_KEY` (a chave vigente fica na wiki do DataJud).
 
+## 1.4 Audiências
+
+Rode `supabase/migracoes/02_audiencias.sql` no SQL Editor (projeto novo: já está no `01_schema.sql`).
+Se a função `datajud-sync` já estiver publicada, atualize o código dela com a versão nova
+(ela passou a sugerir audiências quando o DataJud registra "audiência designada").
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

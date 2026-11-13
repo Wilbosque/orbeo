@@ -5,6 +5,7 @@ import Icone from '../components/Icone.jsx'
 import { Avatares, Carregando, Erro, Fab, Topo, Vazio, useCarregar } from '../components/ui.jsx'
 import { POLOS, SITUACOES, normalizar } from '../lib/formato.js'
 import { soDigitos } from '../lib/cnj.js'
+import { diasAte, rotuloQuando } from '../lib/audiencia.js'
 
 export function CartaoProcesso({ p }) {
   const compartilhado = p.advogados?.length > 1
@@ -21,6 +22,7 @@ export function CartaoProcesso({ p }) {
         <span className={`selo ${p.polo}`}>{POLOS[p.polo]}</span>
         {p.situacao !== 'ativo' && <span className="selo">{SITUACOES[p.situacao]}</span>}
         {p.tipo_acao && <span className="selo">{p.tipo_acao}</span>}
+        {p.proxima_audiencia && <span className={`selo ${diasAte(p.proxima_audiencia) <= 1 ? 'perigo' : 'violeta'}`}><Icone nome="martelo" />{rotuloQuando(p.proxima_audiencia)}</span>}
         {compartilhado && <span className="selo" title="Processo compartilhado"><Icone nome="compartilhado" />Compartilhado</span>}
         <span style={{ marginLeft: 'auto' }}><Avatares advogados={p.advogados} /></span>
       </div>

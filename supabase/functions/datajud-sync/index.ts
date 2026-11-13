@@ -96,6 +96,23 @@ export function extrairCapa(hits: any[]) {
   }
 }
 
+/** Andamento que indica audiência marcada (designada/redesignada) */
+export function ehAudienciaDesignada(m: { nome: string; complemento: string | null }) {
+  const t = `${m.nome} ${m.complemento || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  return /audiencia/.test(t) && /(designad|redesignad|marcad|agendad)/.test(t) && !/(cancelad|realizad|nao realizad)/.test(t)
+}
+
+/** Tipo de audiência a partir do texto do andamento */
+export function tipoAudiencia(texto: string) {
+  const t = (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/concilia/.test(t)) return 'conciliacao'
+  if (/instru/.test(t)) return 'instrucao'
+  if (/\buna\b/.test(t)) return 'una'
+  if (/inicial/.test(t)) return 'inicial'
+  if (/julgamento/.test(t)) return 'julgamento'
+  return 'outra'
+}
+
 // ---------------------------------------------------------------------------
 // DataJud
 // ---------------------------------------------------------------------------
@@ -148,6 +165,7 @@ async function sincronizar(servico: any, p: any) {
 
   const movs = extrairMovimentos(hits)
   let novos = 0
+  const inseridos: any[] = []
   for (let i = 0; i < movs.length; i += 200) {
     const lote = movs.slice(i, i + 200).map(m => ({
       ...m, processo_id: p.id,
@@ -156,9 +174,10 @@ async function sincronizar(servico: any, p: any) {
     }))
     const { data, error } = await servico.from('movimentacoes')
       .upsert(lote, { onConflict: 'processo_id,codigo_tpu,data_hora,nome', ignoreDuplicates: true })
-      .select('id')
+      .select('id,nome,complemento,data_hora')
     if (error) throw new Error(`Erro ao gravar andamentos: ${error.message}`)
     novos += data?.length || 0
+    inseridos.push(...(data || []))
   }
 
   // Completa a capa só onde o cadastro está vazio (nunca sobrescreve o que o advogado digitou)
@@ -175,7 +194,24 @@ async function sincronizar(servico: any, p: any) {
     }
   }
   await servico.from('processos').update(atualizar).eq('id', p.id)
-  return { novos: primeiraVez ? 0 : novos, total: movs.length, importados: primeiraVez ? novos : 0 }
+
+  // Audiência designada → sugestão para o advogado informar data e hora.
+  // Na 1ª consulta, só olha o último andamento de audiência, se for dos últimos 90 dias.
+  let candidatos = inseridos.filter(ehAudienciaDesignada)
+  if (primeiraVez) {
+    const limite = Date.now() - 90 * 86_400_000
+    const ultimoAud = [...inseridos].filter(m => /audi[eê]ncia/i.test(`${m.nome} ${m.complemento || ''}`))
+      .sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)))[0]
+    candidatos = ultimoAud && ehAudienciaDesignada(ultimoAud) && new Date(ultimoAud.data_hora).getTime() > limite ? [ultimoAud] : []
+  }
+  for (const m of candidatos) {
+    await servico.from('sugestoes').insert({
+      tipo: 'audiencia', processo_id: p.id, movimentacao_id: m.id,
+      dados: { tipo: tipoAudiencia(`${m.nome} ${m.complemento || ''}`), andamento: m.nome, complemento: m.complemento, andamento_em: m.data_hora },
+      justificativa: `Andamento no DataJud: ${m.nome}${m.complemento ? ` (${m.complemento})` : ''}. O DataJud não informa a data da audiência: confira no processo e cadastre.`,
+    })
+  }
+  return { novos: primeiraVez ? 0 : novos, total: movs.length, importados: primeiraVez ? novos : 0, audiencias_sugeridas: candidatos.length }
 }
 
 async function lerConfig(servico: any, chave: string, padrao: any) {

@@ -62,9 +62,9 @@ function semente() {
 }
 
 let db
-try { db = JSON.parse(localStorage.getItem('mockdb5')) } catch { db = null }
+try { db = JSON.parse(localStorage.getItem('mockdb6')) } catch { db = null }
 if (!db) db = semente()
-const gravar = () => { try { localStorage.setItem('mockdb5', JSON.stringify(db)) } catch { /* sem storage */ } }
+const gravar = () => { try { localStorage.setItem('mockdb6', JSON.stringify(db)) } catch { /* sem storage */ } }
 
 const ouvintes = new Set()
 const me = () => db.sessao?.user?.id
@@ -79,6 +79,7 @@ function vwProcesso(p) {
       .map(x => db.advogados.find(a => a.id === x.advogado_id)).map(a => ({ id: a.id, nome: a.nome })),
     prazos_abertos: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').length,
     proximo_prazo: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').map(z => z.prazo_fatal).sort()[0] || null, novidades: p.id === 'p1' && !p._visto ? 2 : 0,
+    proxima_audiencia: (db.audiencias || []).filter(a => a.processo_id === p.id && a.status === 'agendada' && a.data_hora >= new Date(Date.now() - 6 * 3600000).toISOString()).map(a => a.data_hora).sort()[0] || null,
   }
 }
 function vwCliente(c) {
@@ -202,7 +203,9 @@ export async function resumo() {
   await atraso()
   const ps = db.processos.filter(p => podeVerProcesso(p.id))
   return { processos: ps.length, ativos: ps.filter(p => p.situacao === 'ativo').length,
-    clientes: db.clientes.filter(c => podeVerCliente(c.id)).length, publicacoesNovas: 1, sugestoesPendentes: db.sugestoes.filter(s => s.status === 'pendente').length }
+    clientes: db.clientes.filter(c => podeVerCliente(c.id)).length, publicacoesNovas: 1, sugestoesPendentes: db.sugestoes.filter(s => s.status === 'pendente').length,
+    sugestoesSuspensao: db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'suspensao').length,
+    sugestoesAudiencia: db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'audiencia' && podeVerProcesso(s.processo_id)).length }
 }
 
 // ---------- Suspensões (demonstração) ----------
@@ -321,4 +324,52 @@ export async function saudeConsultas() {
     { id: 'r2', fonte: 'datajud', iniciada_em: h(16.2), finalizada_em: h(16.17), status: 'ok', requisicoes: 7, novidades: 3, mensagem: '7 processo(s) consultado(s).' },
     { id: 'r3', fonte: 'datajud', iniciada_em: h(40), finalizada_em: h(39.97), status: 'parcial', requisicoes: 5, novidades: 1, mensagem: 'Último erro: O DataJud respondeu com erro 504.' },
   ]
+}
+
+// ---------- Audiências (demonstração) ----------
+function semearAudiencias() {
+  const em = (dias, hora) => { const d = new Date(); d.setDate(d.getDate() + dias); const dia = d.toLocaleDateString('en-CA'); return new Date(`${dia}T${hora}:00-03:00`).toISOString() }
+  db.audiencias = [
+    { id: 'a1', processo_id: 'p1', tipo: 'conciliacao', data_hora: em(1, '09:00'), modalidade: 'virtual', local: null, link: 'https://meet.exemplo/juizado-5', status: 'agendada', resultado: null, observacoes: 'Levar proposta de acordo até R$ 3.000.' },
+    { id: 'a2', processo_id: 'p4', tipo: 'instrucao', data_hora: em(3, '14:00'), modalidade: 'presencial', local: 'Fórum Trabalhista de Salvador · Sala 4', link: null, status: 'agendada', resultado: null, observacoes: 'Duas testemunhas da empresa.' },
+    { id: 'a3', processo_id: 'p3', tipo: 'una', data_hora: em(9, '10:30'), modalidade: 'hibrida', local: 'Fórum de Feira de Santana', link: 'https://meet.exemplo/feira', status: 'agendada', resultado: null, observacoes: null },
+    { id: 'a4', processo_id: 'p2', tipo: 'conciliacao', data_hora: em(-2, '11:00'), modalidade: 'virtual', local: null, link: 'https://meet.exemplo/x', status: 'agendada', resultado: null, observacoes: null },
+    { id: 'a5', processo_id: 'p6', tipo: 'conciliacao', data_hora: em(-20, '15:00'), modalidade: 'virtual', local: null, link: null, status: 'realizada', resultado: 'Sem acordo. Autos conclusos para sentença.', observacoes: null },
+    { id: 'a9', processo_id: 'p9', tipo: 'conciliacao', data_hora: em(1, '08:00'), modalidade: 'virtual', local: null, link: null, status: 'agendada', resultado: null, observacoes: 'sigilosa da colega' },
+  ]
+  db.sugestoes = db.sugestoes || []
+  db.sugestoes.push({ id: 'sa1', tipo: 'audiencia', status: 'pendente', processo_id: 'p5', criado_em: agora(),
+    dados: { tipo: 'conciliacao', andamento: 'Audiência', complemento: 'tipo de audiencia: Conciliação · situacao da audiencia: designada' },
+    justificativa: 'Andamento no DataJud: Audiência (tipo de audiencia: Conciliação · situacao da audiencia: designada). O DataJud não informa a data da audiência: confira no processo e cadastre.' })
+}
+if (!db.audiencias) { semearAudiencias(); gravar() }
+function vwAud(a) {
+  const p = db.processos.find(x => x.id === a.processo_id); const c = db.clientes.find(x => x.id === p.cliente_id)
+  return { ...a, numero_cnj: p.numero_cnj, tribunal: p.tribunal, comarca: p.comarca, orgao_julgador: p.orgao_julgador, polo: p.polo, parte_contraria: p.parte_contraria, cliente_id: p.cliente_id, cliente: c.nome }
+}
+export async function listarAudiencias(f = {}) {
+  await atraso()
+  let l = db.audiencias.filter(a => podeVerProcesso(a.processo_id)).map(vwAud)
+  if (f.processo_id) l = l.filter(a => a.processo_id === f.processo_id)
+  if (f.de) l = l.filter(a => a.data_hora >= f.de)
+  if (f.ate) l = l.filter(a => a.data_hora <= f.ate)
+  if (f.status) l = l.filter(a => a.status === f.status)
+  l.sort((a, b) => a.data_hora.localeCompare(b.data_hora)); if (f.decrescente) l.reverse()
+  return l.slice(0, f.limite || 500)
+}
+export async function salvarAudiencia(a) {
+  await atraso(200)
+  if (!podeVerProcesso(a.processo_id)) throw new Error('Você não tem acesso a este registro.')
+  if (a.id) { const i = db.audiencias.findIndex(x => x.id === a.id); db.audiencias[i] = { ...db.audiencias[i], ...a } ; gravar(); return db.audiencias[i] }
+  const nova = { status: 'agendada', ...a, id: novoId() }; db.audiencias.push(nova); gravar(); return nova
+}
+export async function excluirAudiencia(id) { await atraso(); db.audiencias = db.audiencias.filter(a => a.id !== id); gravar() }
+export async function sugestoesAudiencia() {
+  await atraso()
+  return (db.sugestoes || []).filter(s => s.tipo === 'audiencia' && s.status === 'pendente' && podeVerProcesso(s.processo_id))
+    .map(s => { const p = vwProcesso(db.processos.find(x => x.id === s.processo_id)); return { ...s, processo: { id: p.id, numero_cnj: p.numero_cnj, cliente_nome: p.cliente_nome, polo: p.polo, tribunal: p.tribunal, orgao_julgador: p.orgao_julgador } } })
+}
+export async function aceitarSugestaoAudiencia(sg, a) {
+  const s = await salvarAudiencia({ ...a, processo_id: sg.processo_id, sugestao_id: sg.id })
+  db.sugestoes.find(x => x.id === sg.id).status = 'aceita'; gravar(); return s
 }

@@ -5,6 +5,7 @@ import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { POLOS, SITUACOES, data, iniciais, moeda } from '../lib/formato.js'
+import { AudienciaForm, ItemAudiencia } from '../components/Audiencias.jsx'
 
 function haQuanto(iso) {
   if (!iso) return null
@@ -57,6 +58,8 @@ export default function ProcessoDetalhe() {
   const [p, advogados] = r.dados || []
   const [verMov, setVerMov] = useState(false)
   const [buscando, setBuscando] = useState(false)
+  const auds = useCarregar(() => api.listarAudiencias({ processo_id: id, decrescente: true }), [id])
+  const [formAud, setFormAud] = useState(null)
   const tentouAuto = useRef(false)
 
   async function atualizar(auto = false) {
@@ -149,6 +152,11 @@ export default function ProcessoDetalhe() {
         </dl>
       </div>
 
+      <div className="secao"><h2>Audiências</h2><button className="btn pequeno" onClick={() => setFormAud({})}>+ Audiência</button></div>
+      {auds.dados?.length ? (
+        <div className="lista">{auds.dados.map(a => <ItemAudiencia key={a.id} a={a} mostrarProcesso={false} onAbrir={x => setFormAud(x)} />)}</div>
+      ) : <div className="cartao muted">Nenhuma audiência cadastrada para este processo.</div>}
+
       <div className="secao"><h2>Prazos</h2></div>
       <div className="cartao muted">O controle de prazos entra na próxima etapa, ligado às publicações deste processo.</div>
 
@@ -170,6 +178,12 @@ export default function ProcessoDetalhe() {
       <div style={{ marginTop: 28 }}>
         <button className="btn perigo bloco" onClick={excluir}><Icone nome="lixo" />Excluir processo</button>
       </div>
+
+      <Folha titulo={formAud?.id ? 'Audiência' : 'Nova audiência'} aberta={Boolean(formAud)} fechar={() => setFormAud(null)}>
+        {formAud && <AudienciaForm key={formAud.id || 'nova'} inicial={formAud} processoFixo={id}
+          aoSalvar={async a => { await api.salvarAudiencia(a); toast(a.id ? 'Audiência atualizada.' : 'Audiência cadastrada.'); setFormAud(null); auds.recarregar() }}
+          aoExcluir={formAud.id ? async () => { if (!window.confirm('Excluir esta audiência?')) return; await api.excluirAudiencia(formAud.id); toast('Audiência excluída.'); setFormAud(null); auds.recarregar() } : null} />}
+      </Folha>
 
       <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>
         <LinhaDoTempo processoId={id} aoVer={() => r.recarregar()} />

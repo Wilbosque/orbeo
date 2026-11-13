@@ -5,6 +5,8 @@ import Icone from '../components/Icone.jsx'
 import Logo from '../components/Logo.jsx'
 import { Carregando, Erro, Topo, useCarregar } from '../components/ui.jsx'
 import { POLOS, data } from '../lib/formato.js'
+import { AvisoAudiencias, ItemAudiencia } from '../components/Audiencias.jsx'
+import { diasAte } from '../lib/audiencia.js'
 
 function saudacao() {
   const h = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hour12: false, timeZone: 'America/Sao_Paulo' }).format(new Date()))
@@ -36,8 +38,10 @@ function ItemPrazo({ z, hoje }) {
 
 export default function Inicio() {
   const { perfil } = usePerfil()
-  const r = useCarregar(() => Promise.all([api.resumo(), api.prazosDoDia(), api.listarProcessos()]), [])
-  const [res, prazos, processos] = r.dados || []
+  const r = useCarregar(() => Promise.all([api.resumo(), api.prazosDoDia(), api.listarProcessos(),
+    api.listarAudiencias({ status: 'agendada', de: new Date(Date.now() - 3 * 3600000).toISOString() })]), [])
+  const [res, prazos, processos, audiencias = []] = r.dados || []
+  const audSemana = audiencias.filter(a => diasAte(a.data_hora) <= 7)
   const hoje = api.hojeSP()
   const vencidos = (prazos || []).filter(z => z.prazo_fatal < hoje)
   const vencemHoje = (prazos || []).filter(z => z.prazo_fatal === hoje)
@@ -52,6 +56,14 @@ export default function Inicio() {
       {r.erro && <Erro erro={r.erro} tentar={r.recarregar} />}
       {r.carregando && !r.dados ? <Carregando n={3} /> : res && (
         <>
+          <AvisoAudiencias lista={audiencias} />
+          {[[res.sugestoesAudiencia, '/audiencias', 'audiência designada para cadastrar', 'audiências designadas para cadastrar'],
+            [res.sugestoesSuspensao, '/suspensoes', 'suspensão de prazo para confirmar', 'suspensões de prazo para confirmar']]
+            .filter(([n]) => n > 0).map(([n, to, um, varios]) => (
+              <Link key={to} to={to} className="cartao faixa-sugestoes" style={{ marginBottom: 10 }}>
+                <Icone nome="radar" width="22" height="22" /><div style={{ flex: 1 }}><b>{n} {n > 1 ? varios : um}</b></div><Icone nome="seta" width="18" height="18" />
+              </Link>
+            ))}
           <div className="kpis">
             <a href="#prazos-do-dia" className={`kpi ${vencidos.length || vencemHoje.length ? 'alerta-kpi' : ''}`}>
               <span className="rotulo">Prazos do dia</span>
@@ -60,7 +72,7 @@ export default function Inicio() {
             </a>
             <Link to="/processos?situacao=ativo" className="kpi destaque"><span className="rotulo">Processos ativos</span><span className="valor">{res.ativos}</span></Link>
             <Link to="/processos?novidades=1" className="kpi"><span className="rotulo">Publicações novas</span><span className="valor">{res.publicacoesNovas}</span></Link>
-            <Link to="/suspensoes" className="kpi"><span className="rotulo">Sugestões para confirmar</span><span className="valor">{res.sugestoesPendentes}</span></Link>
+            <Link to="/audiencias" className="kpi"><span className="rotulo">Audiências em 7 dias</span><span className="valor">{audSemana.length}</span></Link>
           </div>
 
           <div className="secao" id="prazos-do-dia"><h2>Prazos do dia</h2></div>
@@ -71,6 +83,10 @@ export default function Inicio() {
               {[...vencidos, ...vencemHoje, ...elaborarHoje].map(z => <ItemPrazo key={z.id} z={z} hoje={hoje} />)}
             </div>
           )}
+
+          <div className="secao"><h2>Próximas audiências</h2><Link className="link-btn" to="/audiencias">Ver todas</Link></div>
+          {audiencias.length === 0 ? <div className="cartao muted">Nenhuma audiência agendada.</div>
+            : <div className="lista grade">{audiencias.slice(0, 4).map(a => <ItemAudiencia key={a.id} a={a} onAbrir={() => {}} />)}</div>}
 
           <div className="secao"><h2>Processos com novidades</h2><Link className="link-btn" to="/processos?novidades=1">Ver todos</Link></div>
           {comNovidade.length === 0 ? (
