@@ -234,20 +234,31 @@ export async function salvarFonte(f) {
   return ok(await sb.from('fontes_atos').upsert({ tribunal: f.tribunal.toUpperCase(), url: f.url || null, ativo: f.ativo ?? true }).select().single())
 }
 
-// ---------- Administração de usuários (função segura no servidor) ----------
-async function admin(acao, dados = {}) {
-  const { data, error } = await sb.functions.invoke('admin-usuarios', { body: { acao, ...dados } })
+// ---------- Funções no servidor (Edge Functions) ----------
+async function invocar(nome, corpo) {
+  const { data, error } = await sb.functions.invoke(nome, { body: corpo })
   if (error) {
     let msg = error.message
-    try { const corpo = await error.context.json(); if (corpo?.erro) msg = corpo.erro } catch { /* sem corpo */ }
-    if (/Failed to send|fetch/i.test(msg)) msg = 'A função de administração não está publicada no Supabase. Veja o README (passo 5).'
+    try { const c = await error.context.json(); if (c?.erro) msg = c.erro } catch { /* sem corpo */ }
+    if (/Failed to send a request/i.test(msg))
+      msg = `Não foi possível falar com a função "${nome}" no Supabase. Confira se ela foi publicada com esse nome e se a opção "Enforce JWT verification" está desligada.`
     throw new Error(msg)
   }
   return data
 }
+
+// ---------- Administração de usuários ----------
+const admin = (acao, dados = {}) => invocar('admin-usuarios', { acao, ...dados })
 export const adminListar = async () => (await admin('listar')).usuarios
 export const adminCriar = d => admin('criar', d)
 export const adminAtivar = (id, ativo) => admin(ativo ? 'reativar' : 'desativar', { id })
 export const adminTornarAdmin = (id, valor) => admin('admin', { id, admin: valor })
 export const adminRedefinirSenha = id => admin('redefinir_senha', { id })
 export const adminExcluir = id => admin('excluir', { id })
+
+// ---------- DataJud ----------
+export const atualizarDataJud = processoId => invocar('datajud-sync', { acao: 'processo', processo_id: processoId })
+export async function marcarVistas(processoId) { return ok(await sb.rpc('marcar_movimentacoes_vistas', { p_processo: processoId })) }
+export async function saudeConsultas() {
+  return ok(await sb.from('sincronizacoes').select('*').order('iniciada_em', { ascending: false }).limit(30))
+}

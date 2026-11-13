@@ -78,7 +78,7 @@ function vwProcesso(p) {
     advogados: db.processo_advogados.filter(x => x.processo_id === p.id)
       .map(x => db.advogados.find(a => a.id === x.advogado_id)).map(a => ({ id: a.id, nome: a.nome })),
     prazos_abertos: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').length,
-    proximo_prazo: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').map(z => z.prazo_fatal).sort()[0] || null, novidades: p.id === 'p1' ? 2 : 0,
+    proximo_prazo: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').map(z => z.prazo_fatal).sort()[0] || null, novidades: p.id === 'p1' && !p._visto ? 2 : 0,
   }
 }
 function vwCliente(c) {
@@ -298,4 +298,27 @@ export async function adminExcluir(id) {
   const cli = db.cliente_advogados.filter(x => x.advogado_id === id && !db.cliente_advogados.some(o => o.cliente_id === x.cliente_id && o.advogado_id !== id)).length
   if (proc || cli) throw new Error(`Não é possível excluir: há ${proc} processo(s) e ${cli} cliente(s) que só este advogado enxerga. Por sigilo, o sistema não transfere esses dados. Desative o acesso ou peça para ele incluir outro advogado antes.`)
   db.advogados = db.advogados.filter(a => a.id !== id); gravar()
+}
+
+// ---------- DataJud (demonstração) ----------
+export async function atualizarDataJud(pid) {
+  await atraso(900)
+  const p = db.processos.find(x => x.id === pid)
+  const primeira = !p.datajud_sync_em
+  if (p.datajud_sync_em && Date.now() - new Date(p.datajud_sync_em) < 600000) return { novos: 0, aviso: 'Consultado há pouco. Tente de novo em 10 min. (O DataJud atualiza uma vez por dia.)' }
+  p.datajud_sync_em = new Date().toISOString()
+  if (!p.comarca) p.comarca = 'Salvador'
+  if (!p.classe) p.classe = 'Procedimento do Juizado Especial Cível'
+  gravar()
+  return primeira ? { novos: 0, total: 14, importados: 14 } : { novos: 1, total: 15 }
+}
+export async function marcarVistas(pid) { await atraso(); const p = db.processos.find(x => x.id === pid); if (p) p._visto = true; gravar(); return 1 }
+export async function saudeConsultas() {
+  await atraso()
+  const h = n => new Date(Date.now() - n * 3600000).toISOString()
+  return [
+    { id: 'r1', fonte: 'datajud', iniciada_em: h(16), finalizada_em: h(15.97), status: 'ok', requisicoes: 0, novidades: 0, mensagem: 'Nada a consultar: todos já foram consultados hoje.' },
+    { id: 'r2', fonte: 'datajud', iniciada_em: h(16.2), finalizada_em: h(16.17), status: 'ok', requisicoes: 7, novidades: 3, mensagem: '7 processo(s) consultado(s).' },
+    { id: 'r3', fonte: 'datajud', iniciada_em: h(40), finalizada_em: h(39.97), status: 'parcial', requisicoes: 5, novidades: 1, mensagem: 'Último erro: O DataJud respondeu com erro 504.' },
+  ]
 }

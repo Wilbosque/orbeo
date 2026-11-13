@@ -50,12 +50,13 @@ export default function Ajustes() {
       <div className="lista">
         <Link to="/suspensoes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="calendario" width="22" height="22" /><b style={{ flex: 1 }}>Suspensões de prazo</b><Icone nome="seta" width="18" height="18" /></Link>
         {perfil.admin && <Link to="/usuarios" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="usuarios" width="22" height="22" /><b style={{ flex: 1 }}>Usuários do sistema</b><span className="selo violeta">Admin</span><Icone nome="seta" width="18" height="18" /></Link>}
+        <Link to="/ajustes/saude" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="saude" width="22" height="22" /><b style={{ flex: 1 }}>Saúde das consultas</b><Icone nome="seta" width="18" height="18" /></Link>
         <Link to="/ajustes/fontes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="radar" width="22" height="22" /><b style={{ flex: 1 }}>Fontes dos diários (varredura)</b><Icone nome="seta" width="18" height="18" /></Link>
       </div>
 
       <div className="secao"><h2>Em breve</h2></div>
       <div className="lista">
-        {[['radar', 'Saúde das consultas (DJEN e DataJud)'], ['engrenagem', 'Configurações das consultas']].map(([ic, t]) => (
+        {[['engrenagem', 'Configurações das consultas']].map(([ic, t]) => (
           <div key={t} className="cartao muted" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome={ic} width="22" height="22" />{t}</div>
         ))}
       </div>

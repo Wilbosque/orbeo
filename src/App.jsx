@@ -14,6 +14,7 @@ import ProcessoDetalhe from './pages/ProcessoDetalhe.jsx'
 import Ajustes from './pages/Ajustes.jsx'
 import Suspensoes from './pages/Suspensoes.jsx'
 import Fontes from './pages/Fontes.jsx'
+import Saude from './pages/Saude.jsx'
 import Usuarios from './pages/Usuarios.jsx'
 import TrocarSenhaObrigatoria from './pages/TrocarSenhaObrigatoria.jsx'
 import { TelaCentral } from './pages/Login.jsx'
@@ -65,6 +66,7 @@ export default function App() {
               <Route path="/ajustes" element={<Ajustes />} />
               <Route path="/suspensoes" element={<Suspensoes />} />
               <Route path="/ajustes/fontes" element={<Fontes />} />
+              <Route path="/ajustes/saude" element={<Saude />} />
               <Route path="/usuarios" element={perfil.admin ? <Usuarios /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

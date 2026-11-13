@@ -26,6 +26,8 @@ const P = {
   calendario: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></>,
   usuarios: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" /><path d="M19 4.5v4M17 6.5h4" /></>,
   cadeado: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+  atualizar: <><path d="M20 12a8 8 0 1 1-2.3-5.6" /><path d="M20 4v5h-5" /></>,
+  saude: <><path d="M3 12h4l2-5 4 10 2-5h6" /></>,
   relogio: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
 }
 export default function Icone({ nome, ...props }) {

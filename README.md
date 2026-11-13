@@ -37,6 +37,19 @@ criar a própria senha no primeiro acesso), gerar nova senha provisória, tornar
 desativar/reativar o acesso e excluir. Por sigilo, só é possível excluir quem não tem processos ou
 clientes exclusivos; nesse caso, desative o acesso.
 
+## 1.3 Consulta ao DataJud (andamentos)
+
+1. **Banco:** se você já tinha rodado o `01_schema.sql` antes, rode agora só
+   `supabase/migracoes/01_fase2_datajud.sql`. (Projeto novo: o `01_schema.sql` já inclui tudo.)
+2. **Função:** Edge Functions → Deploy a new function → Via Editor → nome `datajud-sync` →
+   cole `supabase/functions/datajud-sync/index.ts` → Deploy. Depois, na função, desligue
+   **Enforce JWT verification** e salve (a própria função confere quem chama).
+3. **Agendamento diário:** no SQL Editor, rode `supabase/02_agendamentos.sql`.
+   Ele liga a consulta automática de madrugada (03h–06h, em lotes, abaixo do limite do CNJ).
+
+A chave pública do DataJud já vem no código. Se o CNJ trocar a chave, cadastre a nova em
+Edge Functions → Secrets com o nome `DATAJUD_API_KEY` (a chave vigente fica na wiki do DataJud).
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

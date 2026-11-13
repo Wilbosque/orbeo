@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
@@ -6,13 +6,28 @@ import Icone from '../components/Icone.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { POLOS, SITUACOES, data, iniciais, moeda } from '../lib/formato.js'
 
-function LinhaDoTempo({ processoId }) {
+function haQuanto(iso) {
+  if (!iso) return null
+  const min = Math.round((Date.now() - new Date(iso)) / 60000)
+  if (min < 1) return 'agora há pouco'
+  if (min < 60) return `há ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.round(h / 24)
+  return d === 1 ? 'ontem' : `há ${d} dias`
+}
+
+function LinhaDoTempo({ processoId, aoVer }) {
   const r = useCarregar(() => api.linhaDoTempo(processoId), [processoId])
+  // Depois de mostrar, marca os andamentos como vistos (os "novos" continuam destacados nesta abertura)
+  useEffect(() => {
+    if (r.dados?.some(m => m.nova)) api.marcarVistas(processoId).then(aoVer).catch(() => {})
+  }, [r.dados]) // eslint-disable-line react-hooks/exhaustive-deps
   if (r.erro) return <Erro erro={r.erro} />
   if (r.carregando) return <Carregando n={2} />
   if (!r.dados.length) return (
     <Vazio icone="relogio" titulo="Sem movimentações ainda"
-      texto="Quando a consulta automática estiver ligada, os andamentos do DataJud e as publicações do DJEN aparecem aqui." />
+      texto="Nenhum andamento encontrado no DataJud até agora. Use “Atualizar agora” ou aguarde a consulta automática da madrugada. As publicações do DJEN entram na próxima etapa." />
   )
   return (
     <ul className="tempo">
@@ -41,6 +56,25 @@ export default function ProcessoDetalhe() {
   const r = useCarregar(() => Promise.all([api.obterProcesso(id), api.listarAdvogados()]), [id])
   const [p, advogados] = r.dados || []
   const [verMov, setVerMov] = useState(false)
+  const [buscando, setBuscando] = useState(false)
+  const tentouAuto = useRef(false)
+
+  async function atualizar(auto = false) {
+    setBuscando(true)
+    try {
+      const res = await api.atualizarDataJud(id)
+      if (res.aviso) { if (!auto || !/há pouco/.test(res.aviso)) toast(res.aviso) }
+      else if (res.importados) toast(`Histórico importado do DataJud: ${res.importados} andamento${res.importados > 1 ? 's' : ''}.`)
+      else toast(res.novos ? `${res.novos} andamento${res.novos > 1 ? 's' : ''} novo${res.novos > 1 ? 's' : ''}.` : 'Nenhum andamento novo no DataJud.')
+      r.recarregar()
+    } catch (e) { toast(e.message, 'erro') }
+    finally { setBuscando(false) }
+  }
+  // Processo recém-cadastrado: busca o histórico sozinho na primeira abertura
+  useEffect(() => {
+    const proc = r.dados?.[0]
+    if (proc && !proc.datajud_sync_em && !tentouAuto.current) { tentouAuto.current = true; atualizar(true) }
+  }, [r.dados]) // eslint-disable-line react-hooks/exhaustive-deps
   const [folhaAdv, setFolhaAdv] = useState(false)
 
   async function copiar() {
@@ -87,9 +121,19 @@ export default function ProcessoDetalhe() {
         </div>
       </div>
 
-      <button className="btn bloco" style={{ marginTop: 12 }} onClick={() => setVerMov(true)}>
-        <Icone nome="relogio" />Ver movimentações{p.novidades > 0 ? ` (${p.novidades} nova${p.novidades > 1 ? 's' : ''})` : ''}
-      </button>
+      <div className="acoes-processo">
+        <button className="btn" onClick={() => setVerMov(true)}>
+          <Icone nome="relogio" />Ver movimentações{p.novidades > 0 ? ` (${p.novidades} nova${p.novidades > 1 ? 's' : ''})` : ''}
+        </button>
+        <button className="btn" onClick={() => atualizar(false)} disabled={buscando} title="Consultar o DataJud agora">
+          <Icone nome="atualizar" className={buscando ? 'girando' : ''} />{buscando ? 'Consultando…' : 'Atualizar agora'}
+        </button>
+      </div>
+      <small className="muted" style={{ display: 'block', marginTop: 6 }}>
+        {buscando && !p.datajud_sync_em ? 'Buscando o histórico no DataJud…'
+          : p.datajud_sync_em ? `DataJud consultado ${haQuanto(p.datajud_sync_em)}. Os tribunais enviam os andamentos ao DataJud uma vez por dia.`
+          : 'Ainda não consultado no DataJud.'}
+      </small>
 
       <div className="secao"><h2>Dados do processo</h2></div>
       <div className="cartao">
@@ -128,7 +172,7 @@ export default function ProcessoDetalhe() {
       </div>
 
       <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>
-        <LinhaDoTempo processoId={id} />
+        <LinhaDoTempo processoId={id} aoVer={() => r.recarregar()} />
       </Folha>
       <Folha titulo="Incluir advogado" aberta={folhaAdv} fechar={() => setFolhaAdv(false)}>
         <p className="muted" style={{ marginTop: 0 }}>A pessoa incluída passa a ver este processo e o cadastro do cliente.</p>

@@ -331,3 +331,10 @@ button.cartao.usuario { display: flex; gap: 12px; align-items: center; }
 .topo-marca { padding: calc(env(safe-area-inset-top, 0px) + 14px) 0 0; font-size: 1.25rem; }
 .topo-marca + .topbar { padding-top: 8px; }
 .kpi.destaque .rotulo { color: #a5b4fc; }
+.acoes-processo { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+.acoes-processo .btn { white-space: nowrap; }
+@media (min-width: 640px) { .acoes-processo { grid-template-columns: 1fr auto; } }
+@keyframes girar { to { transform: rotate(360deg) } }
+.girando { animation: girar .9s linear infinite; }
+.sinc { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+.sinc .ponto { width: 10px; height: 10px; border-radius: 50%; }
