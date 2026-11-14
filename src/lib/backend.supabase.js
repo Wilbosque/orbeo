@@ -129,7 +129,7 @@ export async function salvarProcesso(p, colegas = []) {
     numero_cnj: p.numero_cnj, cliente_id: p.cliente_id, polo: p.polo,
     parte_contraria: p.parte_contraria || null, tribunal: p.tribunal,
     orgao_julgador: p.orgao_julgador || null, comarca: p.comarca || null, classe: p.classe || null,
-    tipo_acao: p.tipo_acao || null, valor_causa: p.valor_causa ?? null,
+    tipo_acao: p.tipo_acao || null, valor_causa: p.valor_causa ?? null, rito: p.rito || null, instancia: p.instancia || '1g',
     situacao: p.situacao || 'ativo', data_distribuicao: p.data_distribuicao || null,
     observacoes: p.observacoes || null,
   }
@@ -204,6 +204,10 @@ export async function salvarSuspensao(s) {
     orgao: s.abrangencia === 'orgao' ? s.orgao : null,
     data_inicio: s.data_inicio, data_fim: s.data_fim || s.data_inicio, hora_inicio: s.hora_inicio || null,
     tipo: s.tipo, motivo: s.motivo, numero_ato: s.numero_ato || null, link_ato: s.link_ato || null,
+    instancia: s.instancia || 'todas',
+  }
+  if (!s.id && s.tribunais?.length > 1) {
+    return ok(await sb.from('suspensoes').insert(s.tribunais.map(t => ({ ...campos, tribunal: t }))).select())
   }
   return s.id
     ? ok(await sb.from('suspensoes').update(campos).eq('id', s.id).select().single())
@@ -296,3 +300,33 @@ export async function aceitarSugestaoAudiencia(sg, audiencia) {
   ok(await sb.from('sugestoes').update({ status: 'aceita', decidido_por: await uid(), decidido_em: new Date().toISOString() }).eq('id', sg.id))
   return salva
 }
+
+// ---------- Prazos ----------
+export async function listarPrazos(f = {}) {
+  let q = sb.from('vw_prazos').select('*')
+  if (f.processo_id) q = q.eq('processo_id', f.processo_id)
+  if (f.status) q = q.eq('status', f.status)
+  return ok(await q.order('prazo_fatal', { ascending: true }).limit(f.limite || 1000))
+}
+export async function salvarPrazo(z) {
+  const campos = {
+    processo_id: z.processo_id, tipo: z.tipo, data_recebimento: z.data_recebimento,
+    origem_contagem: z.origem_contagem || 'intimacao', calculo_auto: z.calculo_auto !== false,
+    dias: z.dias ? Number(z.dias) : null, contagem: z.contagem || 'uteis',
+    prazo_fatal: z.calculo_auto !== false ? null : z.prazo_fatal,
+    data_elaboracao: z.data_elaboracao || null, responsavel_id: z.responsavel_id || null,
+    observacoes: z.observacoes || null, status: z.status || 'aberto',
+    data_cumprimento: z.status === 'cumprido' ? z.data_cumprimento : null,
+    audiencia_id: z.audiencia_id || null,
+  }
+  return z.id
+    ? ok(await sb.from('prazos').update(campos).eq('id', z.id).select().single())
+    : ok(await sb.from('prazos').insert(campos).select().single())
+}
+export async function cumprirPrazo(id, data) {
+  return ok(await sb.from('prazos').update({ status: 'cumprido', data_cumprimento: data }).eq('id', id).select().single())
+}
+export async function reabrirPrazo(id) {
+  return ok(await sb.from('prazos').update({ status: 'aberto', data_cumprimento: null }).eq('id', id).select().single())
+}
+export async function excluirPrazo(id) { ok(await sb.from('prazos').delete().eq('id', id)) }

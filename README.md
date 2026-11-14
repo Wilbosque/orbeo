@@ -56,6 +56,27 @@ Rode `supabase/migracoes/02_audiencias.sql` no SQL Editor (projeto novo: já est
 Se a função `datajud-sync` já estiver publicada, atualize o código dela com a versão nova
 (ela passou a sugerir audiências quando o DataJud registra "audiência designada").
 
+## 1.5 Prazos com cálculo automático
+
+Rode `supabase/migracoes/03_prazos.sql` no SQL Editor (projeto novo: já está no `01_schema.sql`).
+O prazo fatal é calculado pelo banco (dias úteis ou corridos, feriados, suspensões, art. 224 do CPC)
+e recalculado sozinho quando uma suspensão é cadastrada, alterada ou excluída.
+
+## 1.6 Ritos (Juizados e Trabalhista)
+
+Rode `supabase/migracoes/04_ritos_juizados.sql` (depois da 03). Cada processo ganha um rito
+(identificado automaticamente pela classe, vara e tribunal) que define os tipos de prazo:
+Juizados (contestação até a audiência, recurso inominado 10 dias, preparo em 48h...),
+Trabalhista (recurso ordinário 8 dias...) e Comum (CPC).
+
+## 1.7 Modelo de contagem do sistema anterior
+
+Rode `supabase/migracoes/05_modelo_anterior.sql` (depois da 04). Ela:
+- inclui Carnaval (segunda e terça) e Corpus Christi como dias sem prazo, todo ano;
+- cria a **instância** no processo e na suspensão (1º grau/Juizados x 2º grau/Turmas Recursais);
+- impede data de elaboração depois do prazo fatal;
+- recalcula os prazos abertos com essas regras.
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

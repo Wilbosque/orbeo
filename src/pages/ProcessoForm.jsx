@@ -9,9 +9,10 @@ import { SITUACOES, TIPOS_ACAO, lerMoeda, mascararMoeda } from '../lib/formato.j
 import { ClienteRapido } from './ClienteForm.jsx'
 import { AUD_VAZIA, CamposAudiencia, validarAudiencia } from '../components/Audiencias.jsx'
 import { montarISO } from '../lib/audiencia.js'
+import { RITOS, inferirRito } from '../lib/prazo.js'
 
 const VAZIO = {
-  numero_cnj: '', cliente_id: '', polo: 'reu', parte_contraria: '', tribunal: '', orgao_julgador: '', comarca: '',
+  numero_cnj: '', cliente_id: '', polo: 'reu', parte_contraria: '', tribunal: '', orgao_julgador: '', comarca: '', rito: '', instancia: '1g',
   classe: '', tipo_acao: '', valor_causa: '', situacao: 'ativo', data_distribuicao: '', observacoes: '',
 }
 
@@ -137,6 +138,17 @@ export default function ProcessoForm() {
 
         <Campo rotulo="Comarca / subseção" ajuda="Usada para aplicar suspensões de uma comarca específica. O DataJud preencherá sozinho quando a consulta estiver ligada.">
           <input className="entrada" value={f.comarca || ''} onChange={e => set('comarca', e.target.value)} placeholder="Ex.: Salvador" />
+        </Campo>
+
+        <Campo rotulo="Instância" ajuda="Define quais suspensões valem para o processo (ex.: TJBA 1º grau/Juizados x 2º grau/Turmas Recursais). Quando o processo subir em recurso, troque aqui: os prazos abertos são recalculados.">
+          <Segmentado rotulo="Instância" valor={f.instancia || '1g'} onChange={v => set('instancia', v)} opcoes={[['1g', '1º grau / Juizados'], ['2g', '2º grau / Turmas Recursais']]} />
+        </Campo>
+
+        <Campo rotulo="Rito / competência" ajuda={`Define os tipos de prazo e as regras de contagem. Automático: ${RITOS[inferirRito(f.tribunal, f.classe, f.orgao_julgador)]}.`}>
+          <select className="entrada" value={f.rito || ''} onChange={e => set('rito', e.target.value)}>
+            <option value="">Automático ({RITOS[inferirRito(f.tribunal, f.classe, f.orgao_julgador)]})</option>
+            {Object.entries(RITOS).map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+          </select>
         </Campo>
 
         <Campo rotulo="Classe">

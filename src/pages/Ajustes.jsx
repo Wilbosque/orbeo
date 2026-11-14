@@ -46,8 +46,9 @@ export default function Ajustes() {
         <button className="cartao" onClick={() => setSenha(true)} style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="engrenagem" width="22" height="22" /><b style={{ flex: 1 }}>Trocar senha</b><Icone nome="seta" width="18" height="18" /></button>
       </div>
 
-      <div className="secao"><h2>Prazos</h2></div>
+      <div className="secao"><h2>Cadastros e prazos</h2></div>
       <div className="lista">
+        <Link to="/clientes" className="cartao so-celular" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="clientes" width="22" height="22" /><b style={{ flex: 1 }}>Clientes</b><Icone nome="seta" width="18" height="18" /></Link>
         <Link to="/suspensoes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="calendario" width="22" height="22" /><b style={{ flex: 1 }}>Suspensões de prazo</b><Icone nome="seta" width="18" height="18" /></Link>
         {perfil.admin && <Link to="/usuarios" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="usuarios" width="22" height="22" /><b style={{ flex: 1 }}>Usuários do sistema</b><span className="selo violeta">Admin</span><Icone nome="seta" width="18" height="18" /></Link>}
         <Link to="/ajustes/saude" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="saude" width="22" height="22" /><b style={{ flex: 1 }}>Saúde das consultas</b><Icone nome="seta" width="18" height="18" /></Link>

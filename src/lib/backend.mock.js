@@ -1,6 +1,7 @@
 // Backend de DEMONSTRAÇÃO (só no modo "mock"): dados fictícios na memória do navegador.
 // Imita as regras de sigilo do banco para os testes de tela.
 import { digitoCNJ } from './cnj.js'
+import { calcularPrazo as _calc, inferirRito } from './prazo.js'
 
 const EU = 'u-wilquer', COLEGA = 'u-colega'
 const atraso = (ms = 120) => new Promise(r => setTimeout(r, ms))
@@ -43,12 +44,13 @@ function semente() {
     P('p6', 8005555, '8', '05', '0001', 'c4', 'autor', 'Banco Exemplo S.A.', '7ª Vara de Relações de Consumo de Salvador', 'Consumidor', 20000, 'arquivado'),
     { ...P('p9', 8000001, '8', '05', '0001', 'c9', 'autor', 'Parte X', 'Vara X', 'Cível', 1000), criado_por: COLEGA },
   ]
-  processos.forEach(p => { p.tribunal = p.numero_cnj.includes('.5.05.') ? 'TRT5' : 'TJBA' })
+  processos.forEach(p => { p.tribunal = p.numero_cnj.includes('.5.05.') ? 'TRT5' : 'TJBA'; p.rito = inferirRito(p.tribunal, p.classe, p.orgao_julgador) })
   const processo_advogados = [
     ['p1', EU], ['p2', EU], ['p3', EU], ['p4', EU], ['p5', EU], ['p6', EU], ['p3', COLEGA], ['p9', COLEGA],
   ].map(([processo_id, advogado_id]) => ({ processo_id, advogado_id }))
   const dia = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA') }
   const prazos = [
+    { id: 'z0', processo_id: 'p1', tipo: 'Manifestação sobre documentos', data_recebimento: dia(-20), data_elaboracao: dia(-12), prazo_fatal: dia(-10), status: 'cumprido', data_cumprimento: dia(-11), responsavel_id: EU, calculo_auto: false },
     { id: 'z1', processo_id: 'p1', tipo: 'Contestação', data_recebimento: dia(-14), data_elaboracao: dia(-1), prazo_fatal: dia(0), status: 'aberto', responsavel_id: EU },
     { id: 'z2', processo_id: 'p4', tipo: 'Manifestação sobre laudo pericial', data_recebimento: dia(-5), data_elaboracao: dia(0), prazo_fatal: dia(3), status: 'aberto', responsavel_id: EU },
     { id: 'z3', processo_id: 'p2', tipo: 'Réplica', data_recebimento: dia(-16), data_elaboracao: dia(-3), prazo_fatal: dia(-1), status: 'aberto', responsavel_id: EU },
@@ -62,9 +64,9 @@ function semente() {
 }
 
 let db
-try { db = JSON.parse(localStorage.getItem('mockdb6')) } catch { db = null }
+try { db = JSON.parse(localStorage.getItem('mockdb9')) } catch { db = null }
 if (!db) db = semente()
-const gravar = () => { try { localStorage.setItem('mockdb6', JSON.stringify(db)) } catch { /* sem storage */ } }
+const gravar = () => { try { localStorage.setItem('mockdb9', JSON.stringify(db)) } catch { /* sem storage */ } }
 
 const ouvintes = new Set()
 const me = () => db.sessao?.user?.id
@@ -155,11 +157,11 @@ export async function salvarProcesso(p, colegas = []) {
   let salvo
   if (p.id) {
     const i = db.processos.findIndex(x => x.id === p.id)
-    salvo = db.processos[i] = { ...db.processos[i], ...p, atualizado_em: agora() }
+    salvo = db.processos[i] = { ...db.processos[i], ...p, rito: p.rito || inferirRito(p.tribunal, p.classe, p.orgao_julgador), atualizado_em: agora() }
   } else {
     if (db.processos.some(x => x.numero_cnj === p.numero_cnj))
       throw new Error('Este número já está cadastrado no escritório por outro advogado. Peça para incluírem você no processo.')
-    salvo = { ...p, id: novoId(), criado_por: me(), criado_em: agora(), atualizado_em: agora() }
+    salvo = { ...p, rito: p.rito || inferirRito(p.tribunal, p.classe, p.orgao_julgador), id: novoId(), criado_por: me(), criado_em: agora(), atualizado_em: agora() }
     db.processos.push(salvo); db.processo_advogados.push({ processo_id: salvo.id, advogado_id: me() })
   }
   for (const a of colegas) await incluirColega(salvo.id, a)
@@ -209,6 +211,14 @@ export async function resumo() {
 }
 
 // ---------- Suspensões (demonstração) ----------
+function carnavalCorpus(ano) {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451)
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1
+  const pascoa = new Date(ano, mes - 1, dia, 12), off = n => { const x = new Date(pascoa); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA') }
+  const pf = (d, m) => ({ id: 'pf' + d, abrangencia: 'nacional', tribunal: null, comarca: null, orgao: null, data_inicio: d, data_fim: d, hora_inicio: null, tipo: 'ponto_facultativo', motivo: m, numero_ato: 'Calendário forense', link_ato: null, fonte: 'regra', instancia: 'todas' })
+  return [pf(off(-48), 'Carnaval (segunda-feira)'), pf(off(-47), 'Carnaval (terça-feira)'), pf(off(60), 'Corpus Christi')]
+}
 function semearSuspensoes() {
   const ano = new Date().getFullYear()
   const r = (d, m) => ({ id: 's' + d + m, abrangencia: 'nacional', tribunal: null, comarca: null, orgao: null, data_inicio: d, data_fim: d, hora_inicio: null, tipo: 'feriado', motivo: m, numero_ato: 'Lei 662/1949', link_ato: null, fonte: 'regra' })
@@ -216,7 +226,7 @@ function semearSuspensoes() {
   const dmes = d => `${ano}-${mes}-${String(d).padStart(2, '0')}`
   const daqui = n => { const x = new Date(); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA') }
   db.suspensoes = [
-    r(`${ano}-11-02`, 'Finados'), r(`${ano}-11-15`, 'Proclamação da República'),
+    ...carnavalCorpus(ano), r(`${ano}-11-02`, 'Finados'), r(`${ano}-11-15`, 'Proclamação da República'),
     { ...r(`${ano}-11-20`, 'Dia Nacional de Zumbi e da Consciência Negra'), numero_ato: 'Lei 14.759/2023' }, r(`${ano}-12-25`, 'Natal'),
     { ...r(`${ano}-12-20`, 'Suspensão de prazos de fim de ano'), data_fim: `${ano + 1}-01-20`, tipo: 'recesso', numero_ato: 'CPC, art. 220' },
     { id: 'sm1', abrangencia: 'tribunal', tribunal: 'TJBA', comarca: null, orgao: null, data_inicio: dmes(9), data_fim: dmes(10), hora_inicio: null, tipo: 'indisponibilidade', motivo: 'Indisponibilidade do PJe para atualização de versão', numero_ato: 'Ato Normativo Conjunto nº 24/2026', link_ato: 'https://www.tjba.jus.br/', fonte: 'manual' },
@@ -246,7 +256,9 @@ export async function salvarSuspensao(s) {
   await atraso(200)
   const limpo = { ...s, data_fim: s.data_fim || s.data_inicio, tribunal: s.abrangencia === 'nacional' ? null : s.tribunal,
     comarca: ['comarca', 'orgao'].includes(s.abrangencia) ? s.comarca : null, orgao: s.abrangencia === 'orgao' ? s.orgao : null }
+  limpo.instancia = s.instancia || 'todas'; delete limpo.tribunais
   if (s.id) { const i = db.suspensoes.findIndex(x => x.id === s.id); db.suspensoes[i] = { ...db.suspensoes[i], ...limpo } }
+  else if (s.tribunais?.length > 1) s.tribunais.forEach(t => db.suspensoes.push({ ...limpo, tribunal: t, id: novoId(), fonte: 'manual' }))
   else db.suspensoes.push({ ...limpo, id: novoId(), fonte: 'manual' })
   gravar(); return limpo
 }
@@ -373,3 +385,37 @@ export async function aceitarSugestaoAudiencia(sg, a) {
   const s = await salvarAudiencia({ ...a, processo_id: sg.processo_id, sugestao_id: sg.id })
   db.sugestoes.find(x => x.id === sg.id).status = 'aceita'; gravar(); return s
 }
+
+// ---------- Prazos (demonstração) ----------
+function vwPrazo(z) {
+  const p = db.processos.find(x => x.id === z.processo_id); const c = db.clientes.find(x => x.id === p.cliente_id)
+  const hoje = hojeSP()
+  return { ...z, numero_cnj: p.numero_cnj, tribunal: p.tribunal, comarca: p.comarca, orgao_julgador: p.orgao_julgador, polo: p.polo, parte_contraria: p.parte_contraria, cliente: c.nome,
+    responsavel_nome: db.advogados.find(a => a.id === z.responsavel_id)?.nome, rito: p.rito,
+    audiencia_data_hora: z.audiencia_id ? db.audiencias.find(a => a.id === z.audiencia_id)?.data_hora : null,
+    situacao: z.status !== 'aberto' ? z.status : z.prazo_fatal < hoje ? 'vencido' : z.prazo_fatal === hoje ? 'vence_hoje' : 'aberto' }
+}
+export async function listarPrazos(f = {}) {
+  await atraso()
+  return db.prazos.filter(z => podeVerProcesso(z.processo_id) && (!f.processo_id || z.processo_id === f.processo_id) && (!f.status || z.status === f.status))
+    .map(vwPrazo).sort((a, b) => a.prazo_fatal.localeCompare(b.prazo_fatal))
+}
+export async function salvarPrazo(z) {
+  await atraso(200)
+  if (!podeVerProcesso(z.processo_id)) throw new Error('Você não tem acesso a este registro.')
+  const p = db.processos.find(x => x.id === z.processo_id)
+  let reg = { status: 'aberto', ...z, calculo_auto: z.calculo_auto !== false }
+  if (z.audiencia_id) {
+    const a = db.audiencias.find(x => x.id === z.audiencia_id)
+    reg = { ...reg, calculo_auto: false, prazo_fatal: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(a.data_hora)) }
+  } else if (reg.calculo_auto) {
+    const r = _calc({ data: z.data_recebimento, origem: z.origem_contagem, dias: Number(z.dias), contagem: z.contagem }, db.suspensoes, p)
+    reg = { ...reg, prazo_fatal: r.fatal, data_inicio_contagem: r.inicio }
+  }
+  if (!reg.prazo_fatal) throw new Error('Informe o prazo fatal ou os dias do prazo.')
+  if (z.id) { const i = db.prazos.findIndex(x => x.id === z.id); db.prazos[i] = { ...db.prazos[i], ...reg } } else db.prazos.push({ ...reg, id: novoId() })
+  gravar(); return reg
+}
+export async function cumprirPrazo(id, data) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'cumprido'; z.data_cumprimento = data; gravar(); return z }
+export async function reabrirPrazo(id) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'aberto'; z.data_cumprimento = null; gravar(); return z }
+export async function excluirPrazo(id) { await atraso(); db.prazos = db.prazos.filter(z => z.id !== id); gravar() }

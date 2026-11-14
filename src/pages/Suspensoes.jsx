@@ -26,7 +26,8 @@ export function ItemSuspensao({ s, onAbrir }) {
       <div className="cartao-topo"><b>{rotuloPeriodo(s)}</b><span className="faint" style={{ fontSize: '.78rem' }}>{FONTES[s.fonte]}</span></div>
       <h3>{s.motivo}</h3>
       <div className="linha">{rotuloAbrangencia(s)}{s.numero_ato ? ` · ${s.numero_ato}` : ''}</div>
-      <div className="cartao-rodape"><SeloTipo tipo={s.tipo} />{s.hora_inicio && <span className="selo">Parcial</span>}</div>
+      <div className="cartao-rodape"><SeloTipo tipo={s.tipo} />{s.hora_inicio && <span className="selo">Parcial</span>}
+        {s.instancia === '1g' && <span className="selo-inst g1">1º grau / Juizados</span>}{s.instancia === '2g' && <span className="selo-inst g2">2º grau / Turmas</span>}</div>
     </button>
   )
 }
@@ -52,7 +53,7 @@ function PrazosAfetados({ s }) {
   )
 }
 
-const VAZIO = { abrangencia: 'tribunal', tribunal: '', comarca: '', orgao: '', data_inicio: '', data_fim: '', hora_inicio: '', tipo: 'ato', motivo: '', numero_ato: '', link_ato: '' }
+const VAZIO = { abrangencia: 'tribunal', instancia: 'todas', tribunal: '', comarca: '', orgao: '', data_inicio: '', data_fim: '', hora_inicio: '', tipo: 'ato', motivo: '', numero_ato: '', link_ato: '' }
 
 export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Salvar suspensão', somenteLeitura }) {
   const [f, setF] = useState({ ...VAZIO, ...inicial, hora_inicio: inicial?.hora_inicio ? String(inicial.hora_inicio).slice(0, 5) : '' })
@@ -60,9 +61,20 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
   const [tocado, setTocado] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))
+  // Cadastro novo de abrangência "Tribunal": vários tribunais de uma vez (como no sistema anterior)
+  const varios = f.abrangencia === 'tribunal' && !f.id && !somenteLeitura
+  const [tribs, setTribs] = useState(inicial?.tribunal ? [inicial.tribunal] : [])
+  const [outro, setOutro] = useState('')
+  const emUso = useCarregar(() => (varios ? api.tribunaisEmUso() : Promise.resolve([])), [varios])
+  const opcoesTrib = [...new Set(['TJBA', ...(emUso.dados || []).map(t => t.tribunal).filter(Boolean), ...tribs])].sort()
+  const alternar = t => setTribs(l => (l.includes(t) ? l.filter(x => x !== t) : [...l, t]))
+  function incluirOutro() {
+    const t = outro.toUpperCase().trim(); if (!t) return
+    setTribs(l => (l.includes(t) ? l : [...l, t])); setOutro('')
+  }
   const precisaComarca = ['comarca', 'orgao'].includes(f.abrangencia)
   const erros = {
-    tribunal: f.abrangencia !== 'nacional' && !f.tribunal ? 'Informe o tribunal.' : '',
+    tribunal: varios ? (!tribs.length ? 'Marque pelo menos um tribunal.' : '') : f.abrangencia !== 'nacional' && !f.tribunal ? 'Informe o tribunal.' : '',
     comarca: precisaComarca && !f.comarca ? 'Informe a comarca.' : '',
     orgao: f.abrangencia === 'orgao' && !f.orgao ? 'Informe a vara.' : '',
     data_inicio: !f.data_inicio ? 'Informe a data.' : '',
@@ -75,7 +87,7 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
     e.preventDefault(); setTocado(true)
     if (temErro || somenteLeitura) return
     setSalvando(true)
-    try { await aoSalvar({ ...f, tribunal: f.tribunal.toUpperCase().trim(), hora_inicio: parcial ? f.hora_inicio : '', data_fim: f.data_fim || f.data_inicio }) }
+    try { await aoSalvar({ ...f, tribunal: varios ? tribs[0] : f.tribunal.toUpperCase().trim(), tribunais: varios ? tribs : undefined, hora_inicio: parcial ? f.hora_inicio : '', data_fim: f.data_fim || f.data_inicio }) }
     finally { setSalvando(false) }
   }
   const e = k => (tocado ? erros[k] : '')
@@ -87,7 +99,29 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
         <Campo rotulo="Abrangência">
           <Segmentado rotulo="Abrangência" valor={f.abrangencia} onChange={v => set('abrangencia', v)} opcoes={ABRANGENCIAS} />
         </Campo>
-        {f.abrangencia !== 'nacional' && (
+        {varios && (
+          <Campo rotulo="Tribunais" obrigatorio erro={e('tribunal')} ajuda="Marque todos os tribunais alcançados pelo ato. Cada um vira uma suspensão própria.">
+            <div className="atalhos-trib">
+              <button type="button" className="btn pequeno" onClick={() => setTribs(opcoesTrib)}>Marcar todos</button>
+              <button type="button" className="btn pequeno" onClick={() => setTribs([])}>Desmarcar todos</button>
+              <button type="button" className="btn pequeno" onClick={() => setTribs(['TJBA'])}>Só TJBA</button>
+            </div>
+            <div className="grade-trib">
+              {opcoesTrib.map(t => (
+                <label key={t} className={`chip-trib ${tribs.includes(t) ? 'on' : ''}`}>
+                  <input type="checkbox" checked={tribs.includes(t)} onChange={() => alternar(t)} />{t}
+                </label>
+              ))}
+            </div>
+            <div className="duas" style={{ marginTop: 8 }}>
+              <input className="entrada" list="lista-tribunais" value={outro} placeholder="Outro (ex.: TJSP)" onChange={x => setOutro(x.target.value.toUpperCase())}
+                onKeyDown={x => { if (x.key === 'Enter') { x.preventDefault(); incluirOutro() } }} autoComplete="off" />
+              <button type="button" className="btn" onClick={incluirOutro}>Incluir</button>
+            </div>
+            <datalist id="lista-tribunais">{TRIBUNAIS.map(t => <option key={t} value={t} />)}</datalist>
+          </Campo>
+        )}
+        {f.abrangencia !== 'nacional' && !varios && (
           <Campo rotulo="Tribunal" obrigatorio erro={e('tribunal')} ajuda="Sigla: TJBA, TJSP, TRT2, TRF1…">
             <input className={`entrada ${e('tribunal') ? 'invalida' : ''}`} list="lista-tribunais" value={f.tribunal || ''} onChange={x => set('tribunal', x.target.value.toUpperCase())} autoComplete="off" />
             <datalist id="lista-tribunais">{TRIBUNAIS.map(t => <option key={t} value={t} />)}</datalist>
@@ -103,6 +137,10 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
             <input className={`entrada ${e('orgao') ? 'invalida' : ''}`} value={f.orgao || ''} onChange={x => set('orgao', x.target.value)} />
           </Campo>
         )}
+        <Campo rotulo="Instância" ajuda="No TJBA, por exemplo, o calendário do 1º grau/Juizados é diferente do 2º grau/Turmas Recursais.">
+          <Segmentado rotulo="Instância" valor={f.instancia || 'todas'} onChange={v => set('instancia', v)}
+            opcoes={[['todas', 'Todas'], ['1g', '1º grau / Juizados'], ['2g', '2º grau / Turmas']]} />
+        </Campo>
         <div className="duas">
           <Campo rotulo="Início" obrigatorio erro={e('data_inicio')}>
             <input className={`entrada ${e('data_inicio') ? 'invalida' : ''}`} type="date" value={f.data_inicio} onChange={x => set('data_inicio', x.target.value)} />
@@ -134,7 +172,7 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
         </Campo>
       </fieldset>
       {f.link_ato && somenteLeitura && <a className="link-btn" href={f.link_ato} target="_blank" rel="noreferrer">Abrir ato</a>}
-      <PrazosAfetados s={{ ...f, data_fim: f.data_fim || f.data_inicio }} />
+      {(!varios || tribs.length === 1) && <PrazosAfetados s={{ ...f, tribunal: varios ? tribs[0] : f.tribunal, data_fim: f.data_fim || f.data_inicio }} />}
       {!somenteLeitura && <button className="btn primario bloco" disabled={salvando}>{salvando ? 'Salvando…' : rotuloSalvar}</button>}
       {aoExcluir && !somenteLeitura && <button type="button" className="btn perigo bloco" onClick={aoExcluir}><Icone nome="lixo" />Excluir suspensão</button>}
     </form>

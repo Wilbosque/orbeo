@@ -6,6 +6,8 @@ import Icone from '../components/Icone.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { POLOS, SITUACOES, data, iniciais, moeda } from '../lib/formato.js'
 import { AudienciaForm, ItemAudiencia } from '../components/Audiencias.jsx'
+import { CumprirForm, ItemPrazoLista, PrazoForm } from '../components/Prazos.jsx'
+import { INSTANCIAS, RITOS } from '../lib/prazo.js'
 
 function haQuanto(iso) {
   if (!iso) return null
@@ -60,6 +62,9 @@ export default function ProcessoDetalhe() {
   const [buscando, setBuscando] = useState(false)
   const auds = useCarregar(() => api.listarAudiencias({ processo_id: id, decrescente: true }), [id])
   const [formAud, setFormAud] = useState(null)
+  const przs = useCarregar(() => api.listarPrazos({ processo_id: id }), [id])
+  const [formPrazo, setFormPrazo] = useState(null)
+  const [cumprir, setCumprir] = useState(null)
   const tentouAuto = useRef(false)
 
   async function atualizar(auto = false) {
@@ -145,6 +150,8 @@ export default function ProcessoDetalhe() {
           <div><dt>Tribunal</dt><dd>{p.tribunal}</dd></div>
           <div><dt>Órgão julgador</dt><dd>{p.orgao_julgador || '—'}</dd></div>
           <div><dt>Comarca</dt><dd>{p.comarca || '—'}</dd></div>
+          <div><dt>Rito</dt><dd>{RITOS[p.rito] || '—'}</dd></div>
+          <div><dt>Instância</dt><dd>{INSTANCIAS[p.instancia || '1g']}</dd></div>
           <div><dt>Classe</dt><dd>{p.classe || '—'}</dd></div>
           <div><dt>Valor da causa</dt><dd>{moeda(p.valor_causa) || '—'}</dd></div>
           <div><dt>Distribuição</dt><dd>{data(p.data_distribuicao) || '—'}</dd></div>
@@ -157,8 +164,11 @@ export default function ProcessoDetalhe() {
         <div className="lista">{auds.dados.map(a => <ItemAudiencia key={a.id} a={a} mostrarProcesso={false} onAbrir={x => setFormAud(x)} />)}</div>
       ) : <div className="cartao muted">Nenhuma audiência cadastrada para este processo.</div>}
 
-      <div className="secao"><h2>Prazos</h2></div>
-      <div className="cartao muted">O controle de prazos entra na próxima etapa, ligado às publicações deste processo.</div>
+      <div className="secao"><h2>Prazos</h2><button className="btn pequeno" onClick={() => setFormPrazo({})}>+ Prazo</button></div>
+      {przs.dados?.length ? (
+        <div className="lista">{[...przs.dados].sort((a, b) => (a.status === b.status ? 0 : a.status === 'aberto' ? -1 : 1)).map(z =>
+          <ItemPrazoLista key={z.id} z={z} mostrarProcesso={false} onAbrir={x => setFormPrazo(x)} onCumprir={setCumprir} />)}</div>
+      ) : <div className="cartao muted">Nenhum prazo cadastrado para este processo.</div>}
 
       <div className="secao">
         <h2>Advogados ({p.advogados.length})</h2>
@@ -183,6 +193,15 @@ export default function ProcessoDetalhe() {
         {formAud && <AudienciaForm key={formAud.id || 'nova'} inicial={formAud} processoFixo={id}
           aoSalvar={async a => { await api.salvarAudiencia(a); toast(a.id ? 'Audiência atualizada.' : 'Audiência cadastrada.'); setFormAud(null); auds.recarregar() }}
           aoExcluir={formAud.id ? async () => { if (!window.confirm('Excluir esta audiência?')) return; await api.excluirAudiencia(formAud.id); toast('Audiência excluída.'); setFormAud(null); auds.recarregar() } : null} />}
+      </Folha>
+
+      <Folha titulo={formPrazo?.id ? 'Editar prazo' : 'Novo prazo'} aberta={Boolean(formPrazo)} fechar={() => setFormPrazo(null)}>
+        {formPrazo && <PrazoForm key={formPrazo.id || 'novo'} inicial={formPrazo} processoFixo={id}
+          aoSalvar={async z => { const s = await api.salvarPrazo(z); toast(`Prazo salvo. Fatal: ${s.prazo_fatal.split('-').reverse().join('/')}.`); setFormPrazo(null); przs.recarregar() }}
+          aoExcluir={formPrazo.id ? async () => { if (!window.confirm('Excluir este prazo?')) return; await api.excluirPrazo(formPrazo.id); toast('Prazo excluído.'); setFormPrazo(null); przs.recarregar() } : null} />}
+      </Folha>
+      <Folha titulo="Prazo cumprido" aberta={Boolean(cumprir)} fechar={() => setCumprir(null)}>
+        {cumprir && <CumprirForm z={cumprir} aoConfirmar={async d => { await api.cumprirPrazo(cumprir.id, d); toast('Prazo marcado como cumprido.'); setCumprir(null); przs.recarregar() }} />}
       </Folha>
 
       <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>
