@@ -57,5 +57,24 @@ select cron.schedule(
   $job$
 );
 
--- Conferência: deve listar os dois agendamentos
+-- Notificações no celular: a cada 15 minutos entre 06:00 e 22:45 (Brasília) = 09:00–01:45 UTC.
+-- Cada aviso é enviado uma vez só (prazos às 7h, audiência na véspera e 2h antes, publicações novas, sugestões às 8h).
+select cron.unschedule(jobid) from cron.job where jobname = 'orbeo-avisos';
+select cron.schedule(
+  'orbeo-avisos',
+  '*/15 0-1,9-23 * * *',
+  $job$
+  select net.http_post(
+    url := 'https://humbhyghezmhwdtwcztr.supabase.co/functions/v1/datajud-sync',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'orbeo_cron')
+    ),
+    body := '{"acao":"rodada_avisos"}'::jsonb,
+    timeout_milliseconds := 60000
+  );
+  $job$
+);
+
+-- Conferência: deve listar os três agendamentos
 select jobname, schedule, active from cron.job where jobname like 'orbeo-%';

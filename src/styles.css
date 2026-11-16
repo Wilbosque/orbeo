@@ -391,3 +391,8 @@ button.cartao.aud.encerrada { border-left-color: var(--faint); opacity: .85; }
 .resultado-pesquisa .partes { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 2px; font-size: .88rem; }
 .resultado-pesquisa .partes b { display: inline-block; min-width: 46px; color: var(--muted); font-weight: 600; font-size: .78rem; }
 .resultado-pesquisa .trecho { margin-top: 6px; padding: 8px 10px; background: var(--bg, #f5f6fa); border-radius: 10px; font-size: .84rem; color: var(--muted); }
+
+/* Notificações */
+.avisos-lista { list-style: none; margin: 12px 0 8px; padding: 0; display: grid; gap: 8px; font-size: .9rem; }
+.avisos-lista li { display: flex; gap: 10px; align-items: flex-start; }
+.avisos-lista svg { flex: none; margin-top: 3px; color: var(--violeta); }

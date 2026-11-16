@@ -6,6 +6,7 @@
 //   { acao: "rodada_djen" }            → agendamento do DJEN (cabeçalho x-cron-secret)
 //   { acao: "pesquisa", nome, inicio?, fim?, tribunal? } → aba "Buscar processos": DJEN pelo nome da parte (precisa de login).
 //                                       Sem datas = busca geral.
+//   { acao: "push_chave" } / { acao: "push_teste" } / { acao: "rodada_avisos" } → notificações no celular
 //
 // DataJud: no máximo `datajud_teto_minuto` requisições por minuto (padrão 119; limite 120).
 // DJEN: busca só pelo NÚMERO de cada processo cadastrado; no máximo `djen_teto_minuto` por minuto (padrão 19; limite 20).
@@ -470,6 +471,190 @@ function inicioDoDiaSP() {
 }
 
 // ---------------------------------------------------------------------------
+// Notificações no celular (Web Push, RFC 8030/8291/8292) só com WebCrypto
+// ---------------------------------------------------------------------------
+const b64u = (buf: ArrayBuffer | Uint8Array) => {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
+  let s = ''; for (const x of b) s += String.fromCharCode(x)
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+const deB64u = (s: string) => {
+  const t = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)
+  return Uint8Array.from(atob(t), c => c.charCodeAt(0))
+}
+const juntar = (...partes: Uint8Array[]) => {
+  const out = new Uint8Array(partes.reduce((n, p) => n + p.length, 0)); let i = 0
+  for (const p of partes) { out.set(p, i); i += p.length }
+  return out
+}
+const txt = (s: string) => new TextEncoder().encode(s)
+
+async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, bytes: number) {
+  const k = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, k, bytes * 8))
+}
+
+/** Gera o par de chaves VAPID (P-256). Devolve a pública (base64url, 65 bytes) e a privada em JWK. */
+export async function gerarChavesVapid() {
+  const par = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as CryptoKeyPair
+  const publica = b64u(await crypto.subtle.exportKey('raw', par.publicKey))
+  const privada_jwk = await crypto.subtle.exportKey('jwk', par.privateKey)
+  return { publica, privada_jwk }
+}
+
+/** Cifra a mensagem para o aparelho (aes128gcm, RFC 8291) */
+export async function cifrarPush(mensagem: Uint8Array, p256dh: string, authSecret: string) {
+  const uaPublica = deB64u(p256dh)
+  const auth = deB64u(authSecret)
+  const efemera = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']) as CryptoKeyPair
+  const asPublica = new Uint8Array(await crypto.subtle.exportKey('raw', efemera.publicKey))
+  const uaChave = await crypto.subtle.importKey('raw', uaPublica, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+  const segredo = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaChave }, efemera.privateKey, 256))
+  const ikm = await hkdf(auth, segredo, juntar(txt('WebPush: info\0'), uaPublica, asPublica), 32)
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const cek = await hkdf(salt, ikm, txt('Content-Encoding: aes128gcm\0'), 16)
+  const nonce = await hkdf(salt, ikm, txt('Content-Encoding: nonce\0'), 12)
+  const chave = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt'])
+  const cifrado = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, chave, juntar(mensagem, new Uint8Array([2]))))
+  const rs = new Uint8Array([0, 0, 16, 0]) // 4096
+  return juntar(salt, rs, new Uint8Array([asPublica.length]), asPublica, cifrado)
+}
+
+/** Token VAPID (JWT ES256) para o serviço de push do aparelho */
+export async function tokenVapid(endpoint: string, privada_jwk: JsonWebKey, contato: string) {
+  const aud = new URL(endpoint).origin
+  const cab = b64u(txt(JSON.stringify({ typ: 'JWT', alg: 'ES256' })))
+  const corpo = b64u(txt(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: contato })))
+  const chave = await crypto.subtle.importKey('jwk', privada_jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign'])
+  const assinatura = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, chave, txt(`${cab}.${corpo}`))
+  return `${cab}.${corpo}.${b64u(assinatura)}`
+}
+
+async function chavesVapid(servico: any) {
+  const { data } = await servico.from('push_chaves').select('publica,privada_jwk').eq('id', 1).maybeSingle()
+  if (data) return data
+  const novas = await gerarChavesVapid()
+  const { error } = await servico.from('push_chaves').insert({ id: 1, ...novas })
+  if (error) { // outra chamada criou ao mesmo tempo
+    const { data: d2 } = await servico.from('push_chaves').select('publica,privada_jwk').eq('id', 1).single()
+    return d2
+  }
+  return novas
+}
+
+type Aviso = { titulo: string; texto: string; url?: string; tag?: string }
+
+/** Envia um aviso para todos os aparelhos do advogado. Apaga inscrições que o aparelho cancelou. */
+async function enviarParaAdvogado(servico: any, advogadoId: string, aviso: Aviso) {
+  const { data: inscricoes } = await servico.from('push_inscricoes').select('*').eq('advogado_id', advogadoId)
+  if (!inscricoes?.length) return 0
+  const { publica, privada_jwk } = await chavesVapid(servico)
+  const contato = Deno.env.get('SUPABASE_URL') || 'https://orbeo.app'
+  const mensagem = txt(JSON.stringify({ title: aviso.titulo, body: aviso.texto, url: aviso.url || '#/', tag: aviso.tag }))
+  let enviados = 0
+  for (const i of inscricoes) {
+    try {
+      const corpo = await cifrarPush(mensagem, i.p256dh, i.auth)
+      const jwt = await tokenVapid(i.endpoint, privada_jwk, contato)
+      const r = await fetch(i.endpoint, {
+        method: 'POST',
+        headers: { Authorization: `vapid t=${jwt}, k=${publica}`, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '43200', Urgency: 'high' },
+        body: corpo,
+      })
+      if (r.status === 404 || r.status === 410) { await servico.from('push_inscricoes').delete().eq('id', i.id); continue }
+      if (!r.ok) { await servico.from('push_inscricoes').update({ falhas: (i.falhas || 0) + 1 }).eq('id', i.id); continue }
+      enviados++
+      await servico.from('push_inscricoes').update({ ultimo_envio: new Date().toISOString(), falhas: 0 }).eq('id', i.id)
+    } catch { await servico.from('push_inscricoes').update({ falhas: (i.falhas || 0) + 1 }).eq('id', i.id) }
+  }
+  return enviados
+}
+
+/** Envia só se esse aviso (chave) ainda não foi para esse advogado */
+async function avisarUmaVez(servico: any, advogadoId: string, chave: string, aviso: Aviso) {
+  const { error } = await servico.from('push_enviados').insert({ advogado_id: advogadoId, chave })
+  if (error) return 0 // já enviado
+  return enviarParaAdvogado(servico, advogadoId, aviso)
+}
+
+const dataBR = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/')
+const horaSP = (iso: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
+
+/** Rodada de avisos (agendada a cada 15 min) */
+async function rodadaAvisos(servico: any) {
+  const agora = new Date()
+  const hoje = hojeSP()
+  const amanha = menosDias(hoje, -1)
+  const hora = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hourCycle: 'h23' }).format(agora))
+  const cfg = async (k: string, p: number) => Number(await lerConfig(servico, k, p))
+  const [hPrazos, hVespera, hAntes, hSug] = await Promise.all([
+    cfg('push_hora_prazos', 7), cfg('push_hora_vespera_audiencia', 18), cfg('push_horas_antes_audiencia', 2), cfg('push_hora_sugestoes', 8)])
+
+  // Quem tem aparelho cadastrado
+  const { data: insc } = await servico.from('push_inscricoes').select('advogado_id')
+  const advogados = [...new Set((insc || []).map((i: any) => i.advogado_id))] as string[]
+  if (!advogados.length) return { enviados: 0, advogados: 0 }
+  const { data: vinc } = await servico.from('processo_advogados').select('processo_id,advogado_id').in('advogado_id', advogados)
+  const procsDe = new Map<string, Set<string>>()
+  for (const v of vinc || []) { if (!procsDe.has(v.advogado_id)) procsDe.set(v.advogado_id, new Set()); procsDe.get(v.advogado_id)!.add(v.processo_id) }
+  let enviados = 0
+
+  // 1) Prazos que vencem hoje e amanhã (resumo)
+  if (hora >= hPrazos) {
+    const { data: przs } = await servico.from('prazos').select('id,processo_id,prazo_fatal,tipo').eq('status', 'aberto').in('prazo_fatal', [hoje, amanha])
+    for (const a of advogados) {
+      const meus = (przs || []).filter((z: any) => procsDe.get(a)?.has(z.processo_id))
+      if (!meus.length) continue
+      const h = meus.filter((z: any) => z.prazo_fatal === hoje).length, m = meus.length - h
+      const partes = [h && `${plural(h, 'prazo vence', 'prazos vencem')} hoje`, m && `${plural(m, 'prazo vence', 'prazos vencem')} amanhã`].filter(Boolean)
+      enviados += await avisarUmaVez(servico, a, `prazos:${hoje}`, { titulo: 'Prazos', texto: partes.join(' e ') + '.', url: '#/prazos', tag: 'prazos' })
+    }
+  }
+
+  // 2) Audiências: véspera e algumas horas antes
+  const { data: auds } = await servico.from('audiencias').select('id,processo_id,data_hora,tipo,processos(numero_cnj,clientes(nome))')
+    .eq('status', 'agendada').gte('data_hora', agora.toISOString()).lte('data_hora', new Date(agora.getTime() + 36 * 3600_000).toISOString())
+  for (const au of auds || []) {
+    const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(au.data_hora))
+    const quem = au.processos?.clientes?.nome || 'Processo'
+    const faltaMin = (new Date(au.data_hora).getTime() - agora.getTime()) / 60_000
+    for (const a of advogados) {
+      if (!procsDe.get(a)?.has(au.processo_id)) continue
+      if (dia === amanha && hora >= hVespera)
+        enviados += await avisarUmaVez(servico, a, `aud-vespera:${au.id}`, { titulo: 'Audiência amanhã', texto: `${quem} · ${horaSP(au.data_hora)} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
+      if (faltaMin <= hAntes * 60 + 7)
+        enviados += await avisarUmaVez(servico, a, `aud-antes:${au.id}`, { titulo: `Audiência às ${horaSP(au.data_hora)}`, texto: `${quem} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
+    }
+  }
+
+  // 3) Publicações novas no DJEN (das últimas 48 h, ainda não lidas)
+  const { data: pubs } = await servico.from('publicacoes').select('id,processo_id,tipo_documento,tipo_comunicacao,processos(clientes(nome))')
+    .eq('status', 'nova').not('processo_id', 'is', null).gte('criado_em', new Date(agora.getTime() - 48 * 3600_000).toISOString())
+  for (const a of advogados) {
+    const meus = (pubs || []).filter((p: any) => procsDe.get(a)?.has(p.processo_id))
+    const ineditas: any[] = []
+    for (const p of meus) { const { error } = await servico.from('push_enviados').insert({ advogado_id: a, chave: `pub:${p.id}` }); if (!error) ineditas.push(p) }
+    if (!ineditas.length) continue
+    const um = ineditas[0]
+    const aviso = ineditas.length === 1
+      ? { titulo: 'Publicação nova no DJEN', texto: `${um.processos?.clientes?.nome || 'Processo'} · ${um.tipo_documento || um.tipo_comunicacao || 'Publicação'}`, url: `#/processos/${um.processo_id}`, tag: 'djen' }
+      : { titulo: 'Publicações novas no DJEN', texto: `${ineditas.length} publicações em ${new Set(ineditas.map(p => p.processo_id)).size} processo(s).`, url: '#/processos?novidades=1', tag: 'djen' }
+    enviados += await enviarParaAdvogado(servico, a, aviso)
+  }
+
+  // 4) Sugestões pendentes (uma vez por dia)
+  if (hora >= hSug) {
+    const { data: sugs } = await servico.from('sugestoes').select('id,tipo,processo_id').eq('status', 'pendente')
+    for (const a of advogados) {
+      const n = (sugs || []).filter((s: any) => s.tipo === 'suspensao' || (s.processo_id && procsDe.get(a)?.has(s.processo_id))).length
+      if (n) enviados += await avisarUmaVez(servico, a, `sugestoes:${hoje}`, { titulo: 'Sugestões para confirmar', texto: `${plural(n, 'sugestão aguarda', 'sugestões aguardam')} a sua confirmação.`, url: '#/', tag: 'sugestoes' })
+    }
+  }
+  return { enviados, advogados: advogados.length }
+}
+
+// ---------------------------------------------------------------------------
 // Servidor
 // ---------------------------------------------------------------------------
 async function tratar(req: Request) {
@@ -551,6 +736,25 @@ async function tratar(req: Request) {
       mensagem: mensagem || (requisicoes ? `${requisicoes} processo(s) consultado(s).` : 'Nada a consultar: todos já foram consultados hoje.'),
     }).eq('id', reg?.id)
     return resposta({ status, requisicoes, novidades, restantes })
+  }
+
+  // ---------- Notificações ----------
+  if (corpo.acao === 'push_chave') {
+    const { publica } = await chavesVapid(servico)
+    return resposta({ publica })
+  }
+  if (corpo.acao === 'push_teste') {
+    const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+    const { data: { user } } = await servico.auth.getUser(token)
+    if (!user) return falha('Sessão inválida. Entre de novo.', 401)
+    const n = await enviarParaAdvogado(servico, user.id, { titulo: 'Orbeo', texto: 'Notificações ativadas. É assim que os avisos vão chegar.', url: '#/ajustes', tag: 'teste' })
+    if (!n) return falha('Nenhum aparelho recebeu. Desative e ative de novo as notificações neste aparelho.')
+    return resposta({ enviados: n })
+  }
+  if (corpo.acao === 'rodada_avisos') {
+    const { data: ok } = await servico.rpc('cron_segredo_confere', { p: req.headers.get('x-cron-secret') || '' })
+    if (!ok) return falha('Não autorizado.', 401)
+    return resposta(await rodadaAvisos(servico))
   }
 
   // ---------- Aba "Buscar processos": DJEN pelo nome da parte ----------

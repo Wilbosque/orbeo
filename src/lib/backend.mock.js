@@ -441,3 +441,10 @@ export async function pesquisarDJEN({ nome, inicio, fim }) {
   ] }
 }
 function menosDias(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('en-CA') }
+
+// ---------- Notificações (demonstração) ----------
+export async function pushChavePublica() { await atraso(); return 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U' }
+export async function salvarInscricaoPush() { await atraso(); db._push = [{ id: 'd1', aparelho: 'iPhone', criado_em: new Date().toISOString() }]; gravar() }
+export async function removerInscricaoPush() { await atraso(); db._push = []; gravar() }
+export async function meusAparelhos() { await atraso(); return db._push || [] }
+export async function pushTeste() { await atraso(500); return { enviados: 1 } }

@@ -263,6 +263,18 @@ export const adminRedefinirSenha = id => admin('redefinir_senha', { id })
 export const adminExcluir = id => admin('excluir', { id })
 
 // ---------- DataJud ----------
+// ---------- Notificações ----------
+export const pushChavePublica = async () => (await invocar('datajud-sync', { acao: 'push_chave' })).publica
+export async function salvarInscricaoPush(sub, aparelho) {
+  const linha = { endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth, aparelho }
+  const { data: atual } = await sb.from('push_inscricoes').select('id').eq('endpoint', sub.endpoint).maybeSingle()
+  if (atual) ok(await sb.from('push_inscricoes').update(linha).eq('id', atual.id))
+  else ok(await sb.from('push_inscricoes').insert(linha))
+}
+export async function removerInscricaoPush(endpoint) { ok(await sb.from('push_inscricoes').delete().eq('endpoint', endpoint)) }
+export async function meusAparelhos() { return ok(await sb.from('push_inscricoes').select('id,aparelho,criado_em,ultimo_envio').order('criado_em')) }
+export const pushTeste = () => invocar('datajud-sync', { acao: 'push_teste' })
+
 // Região de São Paulo: o DJEN só aceita conexões vindas do Brasil
 export const pesquisarDJEN = filtro => invocar('datajud-sync', { acao: 'pesquisa', ...filtro }, { region: 'sa-east-1' })
 export const atualizarDataJud = processoId => invocar('datajud-sync', { acao: 'processo', processo_id: processoId }, { region: 'sa-east-1' })

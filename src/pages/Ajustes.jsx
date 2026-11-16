@@ -1,10 +1,64 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Campo, Folha, Topo, useToast } from '../components/ui.jsx'
 import { UFS, iniciais } from '../lib/formato.js'
+import { ativarPush, desativarPush, estadoPush } from '../lib/push.js'
+
+const AVISOS = [
+  ['relogio', 'Prazos que vencem hoje e amanhã', 'resumo às 7h'],
+  ['martelo', 'Audiências', 'na véspera, às 18h, e 2 horas antes'],
+  ['processos', 'Publicações novas no DJEN', 'assim que a consulta encontrar'],
+  ['radar', 'Sugestões para confirmar', 'uma vez por dia, às 8h'],
+]
+
+function Notificacoes() {
+  const toast = useToast()
+  const [estado, setEstado] = useState(null)
+  const [ocupado, setOcupado] = useState(false)
+  const recarregar = () => estadoPush().then(setEstado).catch(() => setEstado('sem_suporte'))
+  useEffect(() => { recarregar() }, [])
+  async function fazer(fn, msg) {
+    setOcupado(true)
+    try { await fn(); if (msg) toast(msg) } catch (e) { toast(e.message, 'erro') } finally { setOcupado(false); recarregar() }
+  }
+  return (
+    <div className="cartao notif">
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <Icone nome="sino" width="22" height="22" />
+        <b style={{ flex: 1 }}>Notificações neste aparelho</b>
+        {estado === 'ligado' && <span className="selo violeta">Ativas</span>}
+      </div>
+      {estado === 'instalar' && (
+        <div className="aviso info" style={{ marginTop: 10 }}><Icone nome="info" />
+          <div>No iPhone, as notificações só funcionam com o Orbeo salvo na tela de início. No <b>Safari</b>, toque em <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b>, abra o Orbeo pelo ícone e volte aqui.</div>
+        </div>
+      )}
+      {estado === 'sem_suporte' && <p className="muted" style={{ marginBottom: 0 }}>Este navegador não recebe notificações. No iPhone, use o Safari (iOS 16.4 ou mais novo); no Android, o Chrome.</p>}
+      {estado === 'bloqueado' && (
+        <div className="aviso alerta" style={{ marginTop: 10 }}><Icone nome="alerta" />
+          <div>As notificações estão bloqueadas para o Orbeo. Libere em <b>Ajustes do aparelho → Notificações → Orbeo</b> (no Android, nas permissões do site no Chrome) e volte aqui.</div>
+        </div>
+      )}
+      {(estado === 'desligado' || estado === 'ligado') && (
+        <>
+          <ul className="avisos-lista">{AVISOS.map(([ic, t, q]) => <li key={t}><Icone nome={ic} width="16" height="16" /><span><b>{t}</b> · {q}</span></li>)}</ul>
+          <small className="muted" style={{ display: 'block', marginBottom: 10 }}>Você só recebe avisos dos seus processos.</small>
+          {estado === 'desligado'
+            ? <button className="btn primario bloco" disabled={ocupado} onClick={() => fazer(ativarPush, 'Notificações ativadas neste aparelho.')}><Icone nome="sino" />{ocupado ? 'Ativando…' : 'Ativar notificações'}</button>
+            : (
+              <div className="duas">
+                <button className="btn" disabled={ocupado} onClick={() => fazer(api.pushTeste, 'Aviso de teste enviado. Deve chegar em instantes.')}>Enviar teste</button>
+                <button className="btn perigo" disabled={ocupado} onClick={() => fazer(desativarPush, 'Notificações desativadas neste aparelho.')}>Desativar</button>
+              </div>
+            )}
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function Ajustes() {
   const { perfil, setPerfil, email } = usePerfil()
@@ -40,6 +94,9 @@ export default function Ajustes() {
         </div>
       </div>
 
+      <div className="secao"><h2>Notificações</h2></div>
+      <Notificacoes />
+
       <div className="secao"><h2>Conta</h2></div>
       <div className="lista">
         <button className="cartao" onClick={() => { setF(perfil); setEditar(true) }} style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="usuario" width="22" height="22" /><b style={{ flex: 1 }}>Meus dados e OAB</b><Icone nome="seta" width="18" height="18" /></button>
@@ -73,7 +130,7 @@ export default function Ajustes() {
             <Campo rotulo="Nº da OAB" obrigatorio><input className="entrada mono" inputMode="numeric" value={f.oab_numero} onChange={e => setF({ ...f, oab_numero: e.target.value })} required /></Campo>
             <Campo rotulo="UF"><select className="entrada" value={f.oab_uf} onChange={e => setF({ ...f, oab_uf: e.target.value })}>{UFS.map(u => <option key={u}>{u}</option>)}</select></Campo>
           </div>
-          <small className="muted">A OAB é usada para buscar as suas publicações no DJEN.</small>
+          <small className="muted">A OAB aparece no seu cadastro e para os colegas do escritório.</small>
           <button className="btn primario bloco" disabled={salvando}>Salvar</button>
         </form>
       </Folha>

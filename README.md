@@ -85,6 +85,14 @@ o DataJud e o DJEN. A busca é só pelo número de cada processo cadastrado: nen
 A aba **Buscar processos** procura publicações pelo nome de uma parte (cliente ou não) para achar
 processos que ainda não estão no Orbeo; cada resultado tem o botão "Cadastrar processo".
 
+## 1.9 Notificações no celular
+
+Rode `supabase/migracoes/07_notificacoes.sql` (depois da 06) e publique de novo a função `datajud-sync`.
+As chaves de envio são geradas sozinhas pela função na primeira vez (nada para configurar).
+Cada advogado ativa em **Ajustes → Notificações**, em cada aparelho. No iPhone: iOS 16.4 ou mais novo,
+Orbeo salvo na Tela de Início pelo Safari e aberto pelo ícone. Os avisos automáticos dependem do
+`02_agendamentos.sql` (agendamento `orbeo-avisos`, a cada 15 minutos das 6h às 22h45).
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

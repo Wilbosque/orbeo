@@ -6,5 +6,8 @@ import '@fontsource/poppins/latin-500.css'
 import '@fontsource/poppins/latin-600.css'
 import '@fontsource/poppins/latin-700.css'
 import './styles.css'
+import { registrarSW } from './lib/push.js'
+
+registrarSW()
 
 createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>)
