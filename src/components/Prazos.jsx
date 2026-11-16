@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as api from '#backend'
+import { usePerfil } from '../App.jsx'
 import Icone from './Icone.jsx'
 import { Campo, Segmentado, useCarregar, useToast } from './ui.jsx'
 import { GRUPOS, INSTANCIAS, REGRA_RITO, RITOS, calcularPrazo, diaSemana, inferirRito, limiteDoTipo, tipicoDoTipo, tiposDoRito } from '../lib/prazo.js'
@@ -21,12 +22,17 @@ function agruparConsiderados(lista) {
   return out
 }
 
+export const PAPEIS = { admin: 'Sócio administrador', advogado: 'Advogado', estagiario: 'Estagiário' }
+
 export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
   const toast = useToast()
+  const { perfil } = usePerfil()
+  const equipe = useCarregar(() => api.listarAdvogados(), [])
   const [z, setZ] = useState({
     ...PADRAO, data_recebimento: hojeSP(), ...inicial,
     tipo: inicial?.tipo || '', tipoOutro: '', dias: inicial?.dias ?? '', prazo_fatal: inicial?.prazo_fatal || '',
     data_elaboracao: inicial?.data_elaboracao || '', audiencia_id: inicial?.audiencia_id || '',
+    responsavel_id: inicial?.id ? (inicial.responsavel_id || '') : (inicial?.responsavel_id || perfil.id),
   })
   const [salvando, setSalvando] = useState(false)
   const [tocado, setTocado] = useState(false)
@@ -89,7 +95,7 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
     if (Object.values(erros).some(Boolean)) return
     setSalvando(true)
     try {
-      await aoSalvar({ ...z, tipo: tipoFinal, processo_id: processoId, audiencia_id: ligadoAudiencia ? z.audiencia_id : null,
+      await aoSalvar({ ...z, responsavel_id: z.responsavel_id || null, tipo: tipoFinal, processo_id: processoId, audiencia_id: ligadoAudiencia ? z.audiencia_id : null,
         calculo_auto: ligadoAudiencia ? false : z.calculo_auto, prazo_fatal: ligadoAudiencia ? audEscolhida && diaSP(audEscolhida.data_hora) : z.prazo_fatal })
     } catch (err) { toast(err.message, 'erro') } finally { setSalvando(false) }
   }
@@ -201,6 +207,12 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
         </>
       )}
 
+      <Campo rotulo="Responsável" ajuda="Quem vai cuidar do prazo. O estagiário designado vê o processo e pode dar o cumprimento, com observação.">
+        <select className="entrada" value={z.responsavel_id || ''} onChange={x => set('responsavel_id', x.target.value)}>
+          <option value="">Sem responsável definido</option>
+          {(equipe.dados || []).filter(a => a.ativo !== false).map(a => <option key={a.id} value={a.id}>{a.nome}{a.id === perfil.id ? ' (você)' : ''} · {PAPEIS[a.papel] || 'Advogado'}</option>)}
+        </select>
+      </Campo>
       <Campo rotulo="Quando pretende elaborar" erro={e('elaboracao') || erros.elaboracao} ajuda="Aparece em “Prazos do dia” nesta data. Não pode ser depois do prazo fatal.">
         <input className={`entrada ${erros.elaboracao ? 'invalida' : ''}`} type="date" value={z.data_elaboracao} max={fatalFinal || undefined} onChange={x => set('data_elaboracao', x.target.value)} />
       </Campo>
@@ -213,6 +225,8 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
 }
 
 export function ItemPrazoLista({ z, onAbrir, onCumprir, mostrarProcesso = true }) {
+  const { perfil } = usePerfil()
+  const podeCumprir = perfil.papel !== 'estagiario' || z.responsavel_id === perfil.id
   const hoje = hojeSP()
   const dias = Math.round((new Date(z.prazo_fatal + 'T12:00') - new Date(hoje + 'T12:00')) / 86400000)
   const cls = z.status === 'cumprido' ? 'cumprido' : dias < 0 ? 'vencido' : dias === 0 ? 'hoje' : dias <= 3 ? 'elaborar' : ''
@@ -228,11 +242,13 @@ export function ItemPrazoLista({ z, onAbrir, onCumprir, mostrarProcesso = true }
           {z.audiencia_id ? ` · na audiência${z.audiencia_data_hora ? ` (${rotuloQuando(z.audiencia_data_hora)})` : ''}`
             : z.origem_contagem === 'ato' ? ' · prazo em horas' : z.calculo_auto && z.dias ? ` · ${z.dias} dias ${z.contagem === 'uteis' ? 'úteis' : 'corridos'}` : ''}
         </div>
+        {z.responsavel_nome && <div className="ref">Responsável: {z.responsavel_id === perfil.id ? 'você' : z.responsavel_nome}{z.responsavel_papel === 'estagiario' ? ' (estagiário)' : ''}</div>}
+        {z.status === 'cumprido' && z.cumprimento_obs && <div className="ref" style={{ fontStyle: 'italic' }}>“{z.cumprimento_obs.length > 90 ? z.cumprimento_obs.slice(0, 90) + '…' : z.cumprimento_obs}”{z.cumprido_por_nome ? ` · ${z.cumprido_por_nome}` : ''}</div>}
         {z.prazo_fatal_anterior && z.status === 'aberto' && <div className="ref" style={{ color: 'var(--warn)', fontWeight: 600 }}>{z.audiencia_id ? 'Audiência redesignada' : 'Recalculado por suspensão'}: era {fmt(z.prazo_fatal_anterior)}</div>}
       </button>
       <div className="quando">
         <b>{rot}</b>
-        {z.status === 'aberto' && onCumprir && <button className="btn pequeno" onClick={() => onCumprir(z)} style={{ marginTop: 6 }}><Icone nome="certo" />Cumprido</button>}
+        {z.status === 'aberto' && onCumprir && podeCumprir && <button className="btn pequeno" onClick={() => onCumprir(z)} style={{ marginTop: 6 }}><Icone nome="certo" />Cumprido</button>}
       </div>
     </div>
   )
@@ -240,12 +256,82 @@ export function ItemPrazoLista({ z, onAbrir, onCumprir, mostrarProcesso = true }
 
 export function CumprirForm({ z, aoConfirmar }) {
   const [data, setData] = useState(hojeSP())
+  const [obs, setObs] = useState('')
   return (
     <div className="form">
       <div className="muted" style={{ marginTop: -8 }}>{z.tipo} · {z.cliente} · fatal {fmt(z.prazo_fatal)}</div>
       <Campo rotulo="Data do protocolo / cumprimento"><input className="entrada" type="date" value={data} max={hojeSP()} onChange={e => setData(e.target.value)} /></Campo>
       {data > z.prazo_fatal && <div className="aviso alerta"><Icone nome="alerta" />A data informada é posterior ao prazo fatal.</div>}
-      <button className="btn primario bloco" onClick={() => aoConfirmar(data)}><Icone nome="certo" />Marcar como cumprido</button>
+      <Campo rotulo="Observação (opcional)" ajuda="Instruções ou o que foi feito. Fica no histórico do prazo, com o seu nome.">
+        <textarea className="entrada" value={obs} onChange={e => setObs(e.target.value)} placeholder="Ex.: Protocolado no PJe às 15h. Acompanhar a intimação da parte contrária." />
+      </Campo>
+      <button className="btn primario bloco" onClick={() => aoConfirmar(data, obs.trim() || null)}><Icone nome="certo" />Marcar como cumprido</button>
     </div>
+  )
+}
+
+// ---------- Histórico do prazo (quem lançou, cumpriu, observou) ----------
+const ACOES = { criado: 'Lançado', cumprido: 'Cumprido', reaberto: 'Reaberto', responsavel: 'Responsável alterado', observacao: 'Observação', editado: 'Editado' }
+export function HistoricoPrazo({ z }) {
+  const { perfil } = usePerfil()
+  const toast = useToast()
+  const r = useCarregar(() => api.historicoPrazo(z.id), [z.id])
+  const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const podeObservar = perfil.papel !== 'estagiario' || z.responsavel_id === perfil.id
+  async function observar() {
+    setEnviando(true)
+    try { await api.observarPrazo(z.id, texto.trim()); setTexto(''); r.recarregar(); toast('Observação registrada.') } catch (e) { toast(e.message, 'erro') } finally { setEnviando(false) }
+  }
+  return (
+    <div className="historico-prazo">
+      <div className="secao" style={{ marginTop: 20 }}><h2>Histórico do prazo</h2></div>
+      <ul className="hist">
+        {(r.dados || []).map(h => (
+          <li key={h.id}>
+            <div className="quando">{new Date(h.em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {h.autor_nome || '—'}</div>
+            <b>{ACOES[h.acao] || h.acao}</b>
+            {h.texto && <div className="texto">{h.texto}</div>}
+          </li>
+        ))}
+      </ul>
+      {podeObservar && (
+        <div className="form" style={{ marginTop: 10 }}>
+          <textarea className="entrada" value={texto} onChange={e => setTexto(e.target.value)} placeholder="Escrever observação ou instrução…" />
+          <button type="button" className="btn bloco" disabled={enviando || !texto.trim()} onClick={observar}>Registrar observação</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Painel do prazo: formulário (advogados) ou leitura (estagiário), sempre com o histórico */
+export function PainelPrazo({ inicial, processoFixo, aoSalvar, aoExcluir, aoReabrir, aoCumprir }) {
+  const { perfil } = usePerfil()
+  const estagiario = perfil.papel === 'estagiario'
+  if (estagiario && inicial?.id) {
+    const z = inicial
+    return (
+      <div className="form">
+        <dl className="dados" style={{ margin: 0 }}>
+          <div><dt>Prazo</dt><dd>{z.tipo}</dd></div>
+          <div><dt>Processo</dt><dd>{z.cliente} · <span className="mono">{z.numero_cnj}</span></dd></div>
+          <div><dt>Prazo fatal</dt><dd>{fmt(z.prazo_fatal)}</dd></div>
+          {z.data_elaboracao && <div><dt>Elaborar em</dt><dd>{fmt(z.data_elaboracao)}</dd></div>}
+          <div><dt>Responsável</dt><dd>{z.responsavel_nome || '—'}</dd></div>
+          {z.observacoes && <div><dt>Observações</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{z.observacoes}</dd></div>}
+        </dl>
+        {z.status === 'aberto' && z.responsavel_id === perfil.id && <button className="btn primario bloco" onClick={() => aoCumprir?.(z)}><Icone nome="certo" />Dar cumprimento</button>}
+        <HistoricoPrazo z={z} />
+      </div>
+    )
+  }
+  return (
+    <>
+      {inicial?.id && <div className="muted" style={{ marginTop: -8, marginBottom: 12 }}>{inicial.cliente} · {inicial.numero_cnj}</div>}
+      {inicial?.status === 'cumprido' && aoReabrir && <button className="btn bloco" style={{ marginBottom: 12 }} onClick={aoReabrir}>Reabrir prazo</button>}
+      <PrazoForm key={inicial?.id || 'novo'} inicial={inicial} processoFixo={processoFixo} aoSalvar={aoSalvar} aoExcluir={aoExcluir} />
+      {inicial?.id && <HistoricoPrazo z={inicial} />}
+    </>
   )
 }

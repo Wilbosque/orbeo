@@ -76,5 +76,24 @@ select cron.schedule(
   $job$
 );
 
--- Conferência: deve listar os três agendamentos
+-- Processos novos: busca diária pelo nome de cada cliente, de 08:05 a 08:55 (Brasília) = 11:05–11:55 UTC.
+select cron.unschedule(jobid) from cron.job where jobname = 'orbeo-processos-novos';
+select cron.schedule(
+  'orbeo-processos-novos',
+  '5-55/10 11 * * *',
+  $job$
+  select net.http_post(
+    url := 'https://humbhyghezmhwdtwcztr.supabase.co/functions/v1/datajud-sync',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-region', 'sa-east-1',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'orbeo_cron')
+    ),
+    body := '{"acao":"rodada_descoberta"}'::jsonb,
+    timeout_milliseconds := 150000
+  );
+  $job$
+);
+
+-- Conferência: deve listar os quatro agendamentos
 select jobname, schedule, active from cron.job where jobname like 'orbeo-%';

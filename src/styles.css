@@ -402,3 +402,20 @@ button.cartao.aud.encerrada { border-left-color: var(--faint); opacity: .85; }
 .oab-linha { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .oab-nova { display: grid; grid-template-columns: minmax(0,1fr) 84px auto; gap: 8px; }
 .oabs .link-btn { display: inline-flex; align-items: center; gap: 6px; justify-self: start; }
+
+/* Processos novos */
+.novo-proc { text-align: left; display: grid; gap: 4px; }
+.trecho-pub { padding: 10px 12px; background: var(--bg, #f5f6fa); border-radius: 10px; font-size: .88rem; color: var(--muted); }
+.tabela-log { width: 100%; border-collapse: collapse; font-size: .86rem; min-width: 640px; }
+.tabela-log th { text-align: left; font-weight: 600; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tabela-log td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tabela-log tr:last-child td { border-bottom: 0; }
+
+/* Histórico do prazo */
+.hist { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--line); display: grid; gap: 12px; }
+.hist li { position: relative; font-size: .9rem; }
+.hist li::before { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--violeta); }
+.hist .quando { font-size: .78rem; color: var(--muted); }
+.hist .texto { white-space: pre-wrap; color: var(--muted); margin-top: 2px; }
+/* Estagiário: esconde ações de cadastro e edição */
+body.estagiario .so-editor { display: none !important; }

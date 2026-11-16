@@ -44,14 +44,16 @@ export function Navegacao({ perfil, aoSair }) {
   const itens = [
     ['/', 'inicio', 'Início'],
     ['/processos', 'processos', 'Processos'],
+    ['/novos', 'radar', 'Processos novos', true],
     ['/pesquisa', 'busca', 'Buscar processos', true],
     ['/prazos', 'relogio', 'Prazos'],
     ['/audiencias', 'martelo', 'Audiências'],
     ['/clientes', 'clientes', 'Clientes', true],
     ['/suspensoes', 'calendario', 'Suspensões', true],
     ['/usuarios', 'usuarios', 'Usuários', true, true],
+    ['/escritorios', 'balanca', 'Escritórios', true, 'dono'],
     ['/ajustes', 'engrenagem', 'Ajustes'],
-  ].filter(i => !i[4] || perfil?.admin)
+  ].filter(i => !i[4] || (i[4] === 'dono' ? perfil?.dono : perfil?.admin))
   return (
     <nav className="tabbar" aria-label="Navegação principal">
       <div className="marca"><Logo variante="escuro" /></div>
@@ -63,7 +65,7 @@ export function Navegacao({ perfil, aoSair }) {
       {perfil && (
         <div className="menu-usuario">
           <span className="avatar">{iniciais(perfil.nome)}</span>
-          <div className="quem"><b title={perfil.nome}>{perfil.nome}</b><span title={oabsTexto(perfil)}>{oabCurta(perfil)}{perfil.admin ? ' · Admin' : ''}</span></div>
+          <div className="quem"><b title={perfil.nome}>{perfil.nome}</b><span title={oabsTexto(perfil)}>{oabCurta(perfil)}{perfil.papel === 'admin' || perfil.admin ? ' · Sócio adm.' : perfil.papel === 'estagiario' ? ' · Estagiário' : ''}</span></div>
           <button onClick={aoSair} aria-label="Sair do sistema" title="Sair"><Icone nome="sair" /></button>
         </div>
       )}
@@ -89,7 +91,7 @@ export function Topo({ titulo, sub, voltar, acoes }) {
 export function Fab({ to, rotulo }) {
   const nav = useNavigate()
   return (
-    <button className="fab" onClick={() => nav(to)}>
+    <button className="fab so-editor" onClick={() => nav(to)}>
       <Icone nome="mais_add" />{rotulo}
     </button>
   )

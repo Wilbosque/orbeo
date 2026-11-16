@@ -56,7 +56,7 @@ export default function Processos() {
   return (
     <>
       <Topo titulo="Processos" sub={r.dados ? `${filtrados.length} de ${lista.length}` : ' '}
-        acoes={<Link to="/pesquisa" className="btn pequeno" title="Buscar processos novos no DJEN"><Icone nome="radar" />Buscar novos</Link>} />
+        acoes={<div style={{ display: 'flex', gap: 8 }}><Link to="/novos" className="btn pequeno" title="Processos novos identificados"><Icone nome="radar" />Novos</Link><Link to="/pesquisa" className="btn pequeno" title="Buscar no DJEN pelo nome"><Icone nome="busca" />Buscar</Link></div>} />
       <div className="busca">
         <Icone nome="busca" />
         <input type="search" placeholder="Número, cliente, parte contrária, vara…" value={q} onChange={e => set('q', e.target.value)} aria-label="Buscar processos" />

@@ -57,7 +57,8 @@ export default function Inicio() {
       {r.carregando && !r.dados ? <Carregando n={3} /> : res && (
         <>
           <AvisoAudiencias lista={audiencias} />
-          {[[res.sugestoesAudiencia, '/audiencias', 'audiência designada para cadastrar', 'audiências designadas para cadastrar'],
+          {[[res.processosNovos, '/novos', 'processo novo de cliente identificado', 'processos novos de clientes identificados'],
+            [res.sugestoesAudiencia, '/audiencias', 'audiência designada para cadastrar', 'audiências designadas para cadastrar'],
             [res.sugestoesSuspensao, '/suspensoes', 'suspensão de prazo para confirmar', 'suspensões de prazo para confirmar']]
             .filter(([n]) => n > 0).map(([n, to, um, varios]) => (
               <Link key={to} to={to} className="cartao faixa-sugestoes" style={{ marginBottom: 10 }}>

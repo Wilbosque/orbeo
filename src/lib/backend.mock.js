@@ -51,11 +51,11 @@ function semente() {
   const dia = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA') }
   const prazos = [
     { id: 'z0', processo_id: 'p1', tipo: 'Manifestação sobre documentos', data_recebimento: dia(-20), data_elaboracao: dia(-12), prazo_fatal: dia(-10), status: 'cumprido', data_cumprimento: dia(-11), responsavel_id: EU, calculo_auto: false },
-    { id: 'z1', processo_id: 'p1', tipo: 'Contestação', data_recebimento: dia(-14), data_elaboracao: dia(-1), prazo_fatal: dia(0), status: 'aberto', responsavel_id: EU },
-    { id: 'z2', processo_id: 'p4', tipo: 'Manifestação sobre laudo pericial', data_recebimento: dia(-5), data_elaboracao: dia(0), prazo_fatal: dia(3), status: 'aberto', responsavel_id: EU },
-    { id: 'z3', processo_id: 'p2', tipo: 'Réplica', data_recebimento: dia(-16), data_elaboracao: dia(-3), prazo_fatal: dia(-1), status: 'aberto', responsavel_id: EU },
-    { id: 'z4', processo_id: 'p3', tipo: 'Recurso Inominado', data_recebimento: dia(-2), data_elaboracao: dia(5), prazo_fatal: dia(8), status: 'aberto', responsavel_id: COLEGA },
-    { id: 'z5', processo_id: 'p9', tipo: 'Prazo sigiloso da colega', data_recebimento: dia(-2), data_elaboracao: dia(0), prazo_fatal: dia(0), status: 'aberto', responsavel_id: COLEGA },
+    { id: 'z1', processo_id: 'p1', tipo: 'Contestação', data_recebimento: dia(-14), data_elaboracao: dia(-1), prazo_fatal: dia(0), status: 'aberto', responsavel_id: EU, calculo_auto: false },
+    { id: 'z2', processo_id: 'p4', tipo: 'Manifestação sobre laudo pericial', data_recebimento: dia(-5), data_elaboracao: dia(0), prazo_fatal: dia(3), status: 'aberto', responsavel_id: EU, calculo_auto: false },
+    { id: 'z3', processo_id: 'p2', tipo: 'Réplica', data_recebimento: dia(-16), data_elaboracao: dia(-3), prazo_fatal: dia(-1), status: 'aberto', responsavel_id: EU, calculo_auto: false },
+    { id: 'z4', processo_id: 'p3', tipo: 'Recurso Inominado', data_recebimento: dia(-2), data_elaboracao: dia(5), prazo_fatal: dia(8), status: 'aberto', responsavel_id: COLEGA, calculo_auto: false },
+    { id: 'z5', processo_id: 'p9', tipo: 'Prazo sigiloso da colega', data_recebimento: dia(-2), data_elaboracao: dia(0), prazo_fatal: dia(0), status: 'aberto', responsavel_id: COLEGA, calculo_auto: false },
   ]
   const monitoramentos = [
     { id: 'm1', advogado_id: EU, tipo: 'nome_parte', valor: 'MARQUES TURISMO', cliente_id: 'c1', ativo: true, criado_em: agora() },
@@ -70,8 +70,11 @@ const gravar = () => { try { localStorage.setItem('mockdb9', JSON.stringify(db))
 
 const ouvintes = new Set()
 const me = () => db.sessao?.user?.id
-const podeVerProcesso = id => db.processo_advogados.some(x => x.processo_id === id && x.advogado_id === me())
-const podeVerCliente = id => db.cliente_advogados.some(x => x.cliente_id === id && x.advogado_id === me())
+const visaoGeral = () => Boolean(db.advogados.find(a => a.id === me())?.visao_geral)
+const podeVerProcesso = id => visaoGeral() || db.processo_advogados.some(x => x.processo_id === id && x.advogado_id === me())
+  || (db.prazos || []).some(z => z.processo_id === id && z.responsavel_id === me())
+const podeVerCliente = id => visaoGeral() || db.cliente_advogados.some(x => x.cliente_id === id && x.advogado_id === me())
+  || db.processos.some(p => p.cliente_id === id && podeVerProcesso(p.id))
 
 function vwProcesso(p) {
   const c = db.clientes.find(c => c.id === p.cliente_id)
@@ -108,7 +111,18 @@ function semearOabs() {
   db.oabs = db.advogados.map(a => ({ id: 'o-' + a.id, advogado_id: a.id, numero: a.oab_numero, uf: a.oab_uf, principal: true }))
   db.oabs.push({ id: 'o-se', advogado_id: EU, numero: '12345', uf: 'SE', principal: false })
 }
-export async function meuPerfil() { await atraso(); if (!db.oabs) { semearOabs(); gravar() } const a = db.advogados.find(a => a.id === me()); return a ? { ...a, advogado_oabs: oabsDe(a.id) } : null }
+function semearEquipe() {
+  if (db.advogados.some(a => a.papel)) return
+  db.advogados.forEach(a => { a.papel = a.admin ? 'admin' : 'advogado'; a.visao_geral = false })
+  db.advogados.push({ id: 'estag1', nome: 'Ana Estagiária', oab_numero: '12345E', oab_uf: 'BA', email: 'ana@exemplo.com', admin: false, papel: 'estagiario', visao_geral: false, ativo: true, trocar_senha: false, ultimo_acesso: null })
+  db.escritorios = [{ id: 'e1', nome: 'Escritório principal', ativo: true, criado_em: new Date().toISOString(), usuarios: 3, processos: 6 }]
+  gravar()
+}
+export async function meuPerfil() {
+  await atraso(); if (!db.oabs) { semearOabs(); gravar() } semearEquipe()
+  const a = db.advogados.find(a => a.id === me())
+  return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: 'Escritório principal' }, dono: a.id === EU } : null
+}
 export async function listarOabs(id) { await atraso(); return id ? oabsDe(id) : db.oabs || [] }
 export async function incluirOab(numero, uf, adv) {
   await atraso(200); const id = adv || me(); const n = String(numero).replace(/\D/g, ''); uf = uf.toUpperCase()
@@ -134,7 +148,7 @@ export async function salvarPerfil(p) {
   if (i >= 0) db.advogados[i] = novo; else db.advogados.push(novo)
   gravar(); return novo
 }
-export async function listarAdvogados() { await atraso(); return [...db.advogados].map(a => ({ ...a, advogado_oabs: oabsDe(a.id) })).sort((a, b) => a.nome.localeCompare(b.nome)) }
+export async function listarAdvogados() { await atraso(); semearEquipe(); return [...db.advogados].map(a => ({ ...a, advogado_oabs: oabsDe(a.id) })).sort((a, b) => a.nome.localeCompare(b.nome)) }
 
 export async function listarClientes() {
   await atraso(); return db.clientes.filter(c => podeVerCliente(c.id)).map(vwCliente).sort((a, b) => a.nome.localeCompare(b.nome))
@@ -232,7 +246,8 @@ export async function resumo() {
   return { processos: ps.length, ativos: ps.filter(p => p.situacao === 'ativo').length,
     clientes: db.clientes.filter(c => podeVerCliente(c.id)).length, publicacoesNovas: 1, sugestoesPendentes: db.sugestoes.filter(s => s.status === 'pendente').length,
     sugestoesSuspensao: db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'suspensao').length,
-    sugestoesAudiencia: db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'audiencia' && podeVerProcesso(s.processo_id)).length }
+    sugestoesAudiencia: db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'audiencia' && podeVerProcesso(s.processo_id)).length,
+    processosNovos: semearDescobertas().filter(d => d.meu && d.status === 'pendente').length }
 }
 
 // ---------- Suspensões (demonstração) ----------
@@ -321,13 +336,23 @@ export async function adminCriar(d) {
   if (db.advogados.some(a => a.email === d.email)) throw new Error('Já existe um usuário com este e-mail.')
   const id = novoId(); const senha = senhaDemo()
   db.oabs?.push({ id: 'o-' + id, advogado_id: id, numero: d.oab_numero, uf: d.oab_uf, principal: true })
-  db.advogados.push({ id, nome: d.nome, email: d.email, oab_numero: d.oab_numero, oab_uf: d.oab_uf, admin: Boolean(d.admin), ativo: true, trocar_senha: true, ultimo_acesso: null })
+  const papel = d.papel || (d.admin ? 'admin' : 'advogado')
+  db.advogados.push({ id, nome: d.nome, email: d.email, oab_numero: d.oab_numero, oab_uf: d.oab_uf, admin: papel === 'admin', papel, visao_geral: Boolean(d.visao_geral), ativo: true, trocar_senha: true, ultimo_acesso: null })
   gravar(); return { id, senha_temporaria: senha }
 }
 export async function adminAtivar(id, ativo) {
   await atraso(); if (id === me()) throw new Error('Você não pode desativar o seu próprio acesso.')
   db.advogados.find(a => a.id === id).ativo = ativo; gravar()
 }
+export async function adminPapel(id, papel) { await atraso(); const a = db.advogados.find(x => x.id === id); a.papel = papel; a.admin = papel === 'admin'; gravar() }
+export async function adminVisaoGeral(id, v) { await atraso(); db.advogados.find(x => x.id === id).visao_geral = v; gravar() }
+export async function listarEscritorios() { await atraso(); semearEquipe(); return db.escritorios }
+export async function criarEscritorio(d) {
+  await atraso(400); const id = novoId()
+  db.escritorios.push({ id, nome: d.nome, ativo: true, criado_em: new Date().toISOString(), usuarios: 1, processos: 0 }); gravar()
+  return { escritorio_id: id, senha_temporaria: senhaDemo() }
+}
+export async function ativarEscritorio(id, ativo) { await atraso(); db.escritorios.find(e => e.id === id).ativo = ativo; gravar() }
 export async function adminTornarAdmin(id, valor) {
   await atraso(); if (!valor && db.advogados.filter(a => a.admin && a.ativo).length <= 1) throw new Error('É preciso manter pelo menos um administrador ativo.')
   db.advogados.find(a => a.id === id).admin = valor; gravar()
@@ -418,7 +443,8 @@ function vwPrazo(z) {
   const p = db.processos.find(x => x.id === z.processo_id); const c = db.clientes.find(x => x.id === p.cliente_id)
   const hoje = hojeSP()
   return { ...z, numero_cnj: p.numero_cnj, tribunal: p.tribunal, comarca: p.comarca, orgao_julgador: p.orgao_julgador, polo: p.polo, parte_contraria: p.parte_contraria, cliente: c.nome,
-    responsavel_nome: db.advogados.find(a => a.id === z.responsavel_id)?.nome, rito: p.rito,
+    responsavel_nome: db.advogados.find(a => a.id === z.responsavel_id)?.nome, responsavel_papel: db.advogados.find(a => a.id === z.responsavel_id)?.papel,
+    cumprido_por_nome: db.advogados.find(a => a.id === z.cumprido_por)?.nome || null, rito: p.rito,
     audiencia_data_hora: z.audiencia_id ? db.audiencias.find(a => a.id === z.audiencia_id)?.data_hora : null,
     situacao: z.status !== 'aberto' ? z.status : z.prazo_fatal < hoje ? 'vencido' : z.prazo_fatal === hoje ? 'vence_hoje' : 'aberto' }
 }
@@ -444,8 +470,19 @@ export async function salvarPrazo(z) {
   if (z.id) { const i = db.prazos.findIndex(x => x.id === z.id); db.prazos[i] = { ...db.prazos[i], ...reg } } else db.prazos.push({ ...reg, id: novoId() })
   gravar(); return reg
 }
-export async function cumprirPrazo(id, data) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'cumprido'; z.data_cumprimento = data; gravar(); return z }
-export async function reabrirPrazo(id) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'aberto'; z.data_cumprimento = null; gravar(); return z }
+const nomeDe = id => db.advogados.find(a => a.id === id)?.nome || null
+function registrar(prazo_id, acao, texto) { (db.przh ||= []).push({ id: novoId(), prazo_id, acao, texto, autor_id: me(), autor_nome: nomeDe(me()), em: new Date().toISOString() }) }
+export async function cumprirPrazo(id, data, obs = null) {
+  await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'cumprido'; z.data_cumprimento = data; z.cumprido_por = me(); z.cumprimento_obs = obs || null
+  registrar(id, 'cumprido', `Cumprido em ${data.split('-').reverse().join('/')}${obs ? '\n' + obs : ''}`); gravar(); return z
+}
+export async function historicoPrazo(id) {
+  await atraso(); const z = db.prazos.find(x => x.id === id)
+  const base = [{ id: 'h0' + id, prazo_id: id, acao: 'criado', texto: `${z.tipo} · fatal ${z.prazo_fatal.split('-').reverse().join('/')}${z.responsavel_id ? ' · responsável: ' + nomeDe(z.responsavel_id) : ''}`, autor_nome: nomeDe(EU), em: z.criado_em || new Date(Date.now() - 86400000 * 3).toISOString() }]
+  return [...base, ...(db.przh || []).filter(h => h.prazo_id === id)]
+}
+export async function observarPrazo(id, texto) { await atraso(); registrar(id, 'observacao', texto); gravar() }
+export async function reabrirPrazo(id) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'aberto'; z.data_cumprimento = null; z.cumprido_por = null; z.cumprimento_obs = null; registrar(id, 'reaberto', null); gravar(); return z }
 export async function excluirPrazo(id) { await atraso(); db.prazos = db.prazos.filter(z => z.id !== id); gravar() }
 
 // ---------- Buscar processos no DJEN (demonstração) ----------
@@ -472,3 +509,33 @@ export async function salvarInscricaoPush() { await atraso(); db._push = [{ id: 
 export async function removerInscricaoPush() { await atraso(); db._push = []; gravar() }
 export async function meusAparelhos() { await atraso(); return db._push || [] }
 export async function pushTeste() { await atraso(500); return { enviados: 1 } }
+
+// ---------- Processos novos (demonstração) ----------
+function semearDescobertas() {
+  if (db.descobertas) return db.descobertas
+  const h = n => new Date(Date.now() - n * 3600000).toISOString()
+  const d = n => { const x = new Date(); x.setDate(x.getDate() - n); return x.toLocaleDateString('en-CA') }
+  const base = (id, cliente, fantasia, num, trib, orgao, classe, partes, polo, ult, tipo, trecho) => ({ descoberta_id: id, cliente_id: 'c1', cliente_nome: cliente, cliente_fantasia: fantasia,
+    numero_cnj: num, tribunal: trib, orgao_julgador: orgao, classe, partes, polo_cliente: polo, publicacoes: 1, primeira: ult, ultima: ult, ultimo_tipo: tipo, trecho, link: 'https://comunica.pje.jus.br/', termo: 'MARQUES TURISMO', encontrado_em: h(5) })
+  const d1 = base('dsc1', 'Marques Turismo Ltda', 'Marques Turismo', '8007788-15.2026.8.05.0001', 'TJBA', '9ª Vara do Sistema dos Juizados Especiais do Consumidor', 'Procedimento do Juizado Especial Cível',
+    [{ nome: 'RENATA ALVES COSTA', polo: 'A' }, { nome: 'MARQUES TURISMO LTDA', polo: 'P' }], 'reu', d(1), 'Despacho', 'Designo audiência de conciliação por videoconferência. Cite-se a parte ré.')
+  const d2 = base('dsc2', 'Marques Turismo Ltda', 'Marques Turismo', '1023456-78.2026.8.26.0100', 'TJSP', '3ª Vara Cível do Foro Central', 'Procedimento Comum Cível',
+    [{ nome: 'PAULO HENRIQUE DIAS', polo: 'A' }, { nome: 'MARQUES TURISMO LTDA', polo: 'P' }], 'reu', d(2), 'Decisão', 'Defiro a gratuidade. Cite-se a ré para contestar no prazo legal.')
+  const d3 = base('dsc3', 'Bahia Tech Notebooks Ltda', 'Bahia Tech', '0001122-33.2026.5.05.0003', 'TRT5', '3ª Vara do Trabalho de Salvador', 'Ação Trabalhista - Rito Ordinário',
+    [{ nome: 'JOSÉ CARLOS SOUZA', polo: 'A' }, { nome: 'BAHIA TECH NOTEBOOKS LTDA', polo: 'P' }], 'reu', d(9), 'Notificação', 'Notifique-se a reclamada para audiência inicial.')
+  db.descobertas = [
+    { ...d1, aviso_id: 'av1', advogado_id: EU, advogado_nome: 'Wilquer Bosque', meu: true, notificado_em: h(5), status: 'pendente', decidido_em: null, decidido_por_nome: null },
+    { ...d1, aviso_id: 'av2', advogado_id: COLEGA, advogado_nome: 'Colega do Escritório', meu: false, notificado_em: h(5), status: 'pendente', decidido_em: null, decidido_por_nome: null },
+    { ...d2, aviso_id: 'av3', advogado_id: EU, advogado_nome: 'Wilquer Bosque', meu: true, notificado_em: h(29), status: 'pendente', decidido_em: null, decidido_por_nome: null },
+    { ...d3, aviso_id: 'av4', advogado_id: EU, advogado_nome: 'Wilquer Bosque', meu: true, notificado_em: h(200), status: 'visualizado', decidido_em: h(190), decidido_por_nome: 'Wilquer Bosque' },
+  ]
+  gravar(); return db.descobertas
+}
+export async function listarDescobertas({ historico = false } = {}) {
+  await atraso(); const l = semearDescobertas()
+  return (historico ? l : l.filter(x => x.meu && x.status === 'pendente')).map(x => ({ ...x })).sort((a, b) => b.notificado_em.localeCompare(a.notificado_em))
+}
+export async function decidirDescoberta(avisoId, status) {
+  await atraso(200); const a = db.descobertas.find(x => x.aviso_id === avisoId)
+  a.status = status; a.decidido_em = status === 'pendente' ? null : new Date().toISOString(); a.decidido_por_nome = status === 'pendente' ? null : 'Wilquer Bosque'; gravar()
+}

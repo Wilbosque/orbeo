@@ -19,7 +19,7 @@ function Resultado({ p, nome, clienteId, aoCadastrar }) {
     <div className="cartao resultado-pesquisa">
       <div className="cartao-topo">
         <span className="mono numero">{p.numero_cnj}</span>
-        {p.processo_id ? <span className="selo">Já no Orbeo</span> : p.polo_pesquisado && <span className={`selo ${p.polo_pesquisado}`}>{POLO_ROT[p.polo_pesquisado]}</span>}
+        {p.processo_id || p.no_escritorio ? <span className="selo">Já no Orbeo</span> : p.polo_pesquisado && <span className={`selo ${p.polo_pesquisado}`}>{POLO_ROT[p.polo_pesquisado]}</span>}
       </div>
       <div className="linha" style={{ whiteSpace: 'normal' }}>{[p.tribunal, p.orgao_julgador].filter(Boolean).join(' · ')}</div>
       {p.classe && <div className="linha" style={{ whiteSpace: 'normal' }}>{p.classe}</div>}
@@ -35,7 +35,9 @@ function Resultado({ p, nome, clienteId, aoCadastrar }) {
         {p.link && <a className="link-btn" href={p.link} target="_blank" rel="noreferrer">Documento no tribunal</a>}
         {p.processo_id
           ? <Link className="btn pequeno" to={`/processos/${p.processo_id}`}>Abrir no Orbeo</Link>
-          : <button className="btn pequeno primario" onClick={() => aoCadastrar(p, contraria, clienteId)}><Icone nome="mais_add" />Cadastrar processo</button>}
+          : p.no_escritorio ? <small className="muted">Cadastrado por um colega do escritório</small>
+          : null}
+        {!p.processo_id && !p.no_escritorio && <button className="btn pequeno primario so-editor" onClick={() => aoCadastrar(p, contraria, clienteId)}><Icone nome="mais_add" />Cadastrar processo</button>}
       </div>
     </div>
   )
@@ -85,8 +87,8 @@ export default function Pesquisa() {
   }
 
   const { buscando, erro, res, nomeBuscado } = estado
-  const novos = res?.processos.filter(p => !p.processo_id) || []
-  const jaTenho = res?.processos.filter(p => p.processo_id) || []
+  const novos = res?.processos.filter(p => !p.processo_id && !p.no_escritorio) || []
+  const jaTenho = res?.processos.filter(p => p.processo_id || p.no_escritorio) || []
   return (
     <>
       <Topo titulo="Buscar processos" sub="Publicações no DJEN pelo nome da parte" voltar="/processos" />

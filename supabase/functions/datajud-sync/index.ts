@@ -7,6 +7,7 @@
 //   { acao: "pesquisa", nome, inicio?, fim?, tribunal? } → aba "Buscar processos": DJEN pelo nome da parte (precisa de login).
 //                                       Sem datas = busca geral.
 //   { acao: "push_chave" } / { acao: "push_teste" } / { acao: "rodada_avisos" } → notificações no celular
+//   { acao: "rodada_descoberta" } → busca diária de processos NOVOS pelo nome de cada cliente (cabeçalho x-cron-secret)
 //
 // DataJud: no máximo `datajud_teto_minuto` requisições por minuto (padrão 119; limite 120).
 // DJEN: busca só pelo NÚMERO de cada processo cadastrado; no máximo `djen_teto_minuto` por minuto (padrão 19; limite 20).
@@ -192,7 +193,7 @@ export function agruparPorProcesso(itens: any[], nome: string) {
     if (!g) {
       g = { numero_cnj: mascaraCNJ(r.numero_cnj), tribunal: r.tribunal, orgao_julgador: r.orgao_julgador, classe: r.classe,
             partes: [] as any[], publicacoes: 0, primeira: r.data_disponibilizacao, ultima: r.data_disponibilizacao,
-            ultimo_tipo: null, ultimo_trecho: '', link: r.link, polo_pesquisado: null as string | null }
+            ultimo_tipo: null, ultimo_trecho: '', link: r.link, polo_pesquisado: null as string | null, cita_nome: false }
       mapa.set(r.numero_cnj, g)
     }
     g.publicacoes++
@@ -203,6 +204,7 @@ export function agruparPorProcesso(itens: any[], nome: string) {
       if (r.orgao_julgador) g.orgao_julgador = r.orgao_julgador
     }
     if (!g.classe && r.classe) g.classe = r.classe
+    if (alvo && (normalizar(r.texto).includes(alvo) || (r.destinatarios || []).some((d: any) => normalizar(d.nome).includes(alvo)))) g.cita_nome = true
     for (const d of r.destinatarios || []) {
       if (!d.nome || g.partes.some((x: any) => normalizar(x.nome) === normalizar(d.nome))) continue
       g.partes.push(d)
@@ -444,14 +446,14 @@ async function sincronizarDJEN(servico: any, p: any, pausaMs: number) {
   let novas = 0
   for (const reg of registros) {
     const { data: pub } = await servico.rpc('proximo_dia_util', {
-      d: reg.data_disponibilizacao, trib: p.tribunal, com: p.comarca, org: p.orgao_julgador, inst: p.instancia || '1g',
+      d: reg.data_disponibilizacao, trib: p.tribunal, com: p.comarca, org: p.orgao_julgador, inst: p.instancia || '1g', esc: p.escritorio_id,
     })
     const linha = {
       ...reg, numero_cnj: p.numero_cnj,
       processo_id: p.id, data_publicacao: pub || null,
       status: primeiraVez && reg.data_disponibilizacao < corte ? 'lida' : 'nova',
     }
-    const { data, error } = await servico.from('publicacoes').upsert(linha, { onConflict: 'djen_id', ignoreDuplicates: true }).select('id')
+    const { data, error } = await servico.from('publicacoes').upsert(linha, { onConflict: 'djen_id,processo_id', ignoreDuplicates: true }).select('id')
     if (error) throw new Error(`Erro ao gravar publicações: ${error.message}`)
     if (data?.length && linha.status === 'nova') novas++
   }
@@ -581,6 +583,74 @@ const dataBR = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/')
 const horaSP = (iso: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
 
+// ---------------------------------------------------------------------------
+// Descoberta diária de processos novos (DJEN pelo nome de cada cliente)
+// ---------------------------------------------------------------------------
+async function rodadaDescoberta(servico: any) {
+  const inicio = Date.now()
+  const hoje = hojeSP()
+  const diasPrimeira = Number(await lerConfig(servico, 'descoberta_dias_primeira_busca', 30))
+  const teto = Math.max(1, Number(await lerConfig(servico, 'djen_teto_minuto', 19)))
+  const pausa = Math.ceil(60_000 / teto)
+
+  // Clientes com advogado vinculado; nomes de busca = os cadastrados no cliente, ou a razão social se for PJ sem nenhum
+  const { data: vinc } = await servico.from('cliente_advogados').select('cliente_id,advogado_id')
+  const advsDe = new Map<string, string[]>()
+  for (const v of vinc || []) advsDe.set(v.cliente_id, [...(advsDe.get(v.cliente_id) || []), v.advogado_id])
+  const ids = [...advsDe.keys()]
+  if (!ids.length) return { buscas: 0, novos: 0 }
+  const { data: clientes } = await servico.from('clientes').select('id,tipo,nome,escritorio_id').in('id', ids)
+  const escDe = new Map((clientes || []).map((c: any) => [c.id, c.escritorio_id]))
+  const { data: termos } = await servico.from('monitoramentos').select('cliente_id,valor').eq('tipo', 'nome_parte').eq('ativo', true).in('cliente_id', ids)
+  const pares: { cliente_id: string; termo: string }[] = []
+  for (const c of clientes || []) {
+    const meus = [...new Set((termos || []).filter((t: any) => t.cliente_id === c.id).map((t: any) => String(t.valor).trim().toUpperCase()))]
+    if (!meus.length && c.tipo === 'PJ') meus.push(String(c.nome).trim().toUpperCase())
+    for (const termo of meus) if (termo.length >= 4) pares.push({ cliente_id: c.id, termo })
+  }
+  const { data: feitas } = await servico.from('descoberta_buscas').select('*')
+  const ultima = new Map((feitas || []).map((b: any) => [`${b.cliente_id}|${b.termo}`, b.ultima_busca]))
+  const inicioDia = inicioDoDiaSP()
+  const fila = pares.filter(p => { const u = ultima.get(`${p.cliente_id}|${p.termo}`); return !u || u < inicioDia })
+    .sort((a, b) => String(ultima.get(`${a.cliente_id}|${a.termo}`) || '').localeCompare(String(ultima.get(`${b.cliente_id}|${b.termo}`) || '')))
+
+  let buscas = 0, novos = 0, erro = ''
+  for (const p of fila) {
+    if (Date.now() - inicio > TEMPO_MAXIMO_RODADA_MS) break
+    const u = ultima.get(`${p.cliente_id}|${p.termo}`) as string | undefined
+    const desde = u ? menosDias(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(u)), 2) : menosDias(hoje, diasPrimeira)
+    try {
+      const r = await lerJanela(p.termo, null, desde, hoje, 5); buscas += r.usadas
+      const grupos = agruparPorProcesso(r.itens, p.termo).filter(g => g.cita_nome)
+      if (grupos.length) {
+        // Só o que ainda NÃO está no escritório do cliente
+        const { data: existentes } = await servico.from('processos').select('numero_cnj').eq('escritorio_id', escDe.get(p.cliente_id)).in('numero_cnj', grupos.map(g => g.numero_cnj))
+        const ja = new Set((existentes || []).map((e: any) => e.numero_cnj))
+        for (const g of grupos.filter(g => !ja.has(g.numero_cnj))) {
+          const { data: d } = await servico.from('descobertas').upsert({
+            cliente_id: p.cliente_id, numero_cnj: g.numero_cnj, tribunal: g.tribunal, orgao_julgador: g.orgao_julgador, classe: g.classe,
+            partes: g.partes, polo_cliente: g.polo_pesquisado, publicacoes: g.publicacoes, primeira: g.primeira, ultima: g.ultima,
+            ultimo_tipo: g.ultimo_tipo, trecho: g.ultimo_trecho, link: g.link, termo: p.termo, atualizado_em: new Date().toISOString(),
+          }, { onConflict: 'cliente_id,numero_cnj' }).select('id').single()
+          if (!d) continue
+          const linhas = (advsDe.get(p.cliente_id) || []).map(a => ({ descoberta_id: d.id, advogado_id: a }))
+          const { data: criados } = await servico.from('descoberta_avisos').upsert(linhas, { onConflict: 'descoberta_id,advogado_id', ignoreDuplicates: true }).select('id')
+          novos += criados?.length || 0
+        }
+      }
+      await servico.from('descoberta_buscas').upsert({ cliente_id: p.cliente_id, termo: p.termo, ultima_busca: new Date().toISOString(), ultimo_erro: null })
+    } catch (e) {
+      erro = (e as Error).message
+      await servico.from('descoberta_buscas').upsert({ cliente_id: p.cliente_id, termo: p.termo, ultima_busca: u || null, ultimo_erro: erro })
+      if (e instanceof ErroDJEN && e.parar) break
+    }
+    await dormir(pausa)
+  }
+  await servico.from('sincronizacoes').insert({ fonte: 'djen', finalizada_em: new Date().toISOString(), status: erro ? 'parcial' : 'ok', requisicoes: buscas, novidades: novos,
+    mensagem: erro ? `Descoberta de processos novos. Último erro: ${erro}` : `Descoberta de processos novos: ${novos} aviso(s) novo(s).` })
+  return { buscas, novos, restantes: Math.max(0, fila.length - buscas) }
+}
+
 /** Rodada de avisos (agendada a cada 15 min) */
 async function rodadaAvisos(servico: any) {
   const agora = new Date()
@@ -602,9 +672,9 @@ async function rodadaAvisos(servico: any) {
 
   // 1) Prazos que vencem hoje e amanhã (resumo)
   if (hora >= hPrazos) {
-    const { data: przs } = await servico.from('prazos').select('id,processo_id,prazo_fatal,tipo').eq('status', 'aberto').in('prazo_fatal', [hoje, amanha])
+    const { data: przs } = await servico.from('prazos').select('id,processo_id,prazo_fatal,tipo,responsavel_id').eq('status', 'aberto').in('prazo_fatal', [hoje, amanha])
     for (const a of advogados) {
-      const meus = (przs || []).filter((z: any) => procsDe.get(a)?.has(z.processo_id))
+      const meus = (przs || []).filter((z: any) => procsDe.get(a)?.has(z.processo_id) || z.responsavel_id === a)
       if (!meus.length) continue
       const h = meus.filter((z: any) => z.prazo_fatal === hoje).length, m = meus.length - h
       const partes = [h && `${plural(h, 'prazo vence', 'prazos vencem')} hoje`, m && `${plural(m, 'prazo vence', 'prazos vencem')} amanhã`].filter(Boolean)
@@ -643,7 +713,23 @@ async function rodadaAvisos(servico: any) {
     enviados += await enviarParaAdvogado(servico, a, aviso)
   }
 
-  // 4) Sugestões pendentes (uma vez por dia)
+  // 4) Processos novos identificados (só para os advogados do cliente)
+  const { data: descs } = await servico.from('descoberta_avisos').select('id,advogado_id,descoberta_id,descobertas(numero_cnj,tribunal,clientes(nome,nome_fantasia))')
+    .eq('status', 'pendente').in('advogado_id', advogados).gte('notificado_em', new Date(agora.getTime() - 72 * 3600_000).toISOString())
+  for (const a of advogados) {
+    const ineditos: any[] = []
+    for (const d of (descs || []).filter((x: any) => x.advogado_id === a)) {
+      const { error } = await servico.from('push_enviados').insert({ advogado_id: a, chave: `desc:${d.id}` }); if (!error) ineditos.push(d)
+    }
+    if (!ineditos.length) continue
+    const um = ineditos[0].descobertas
+    const cli = um?.clientes?.nome_fantasia || um?.clientes?.nome || 'cliente'
+    enviados += await enviarParaAdvogado(servico, a, ineditos.length === 1
+      ? { titulo: `Processo novo · ${cli}`, texto: `${um?.numero_cnj} · ${um?.tribunal || ''}. Toque para ver e decidir se cadastra.`, url: `#/novos?id=${ineditos[0].descoberta_id}`, tag: 'novos' }
+      : { titulo: 'Processos novos identificados', texto: `${ineditos.length} processos dos seus clientes ainda não estão no Orbeo.`, url: '#/novos', tag: 'novos' })
+  }
+
+  // 5) Sugestões pendentes (uma vez por dia)
   if (hora >= hSug) {
     const { data: sugs } = await servico.from('sugestoes').select('id,tipo,processo_id').eq('status', 'pendente')
     for (const a of advogados) {
@@ -670,10 +756,16 @@ async function tratar(req: Request) {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     const { data: { user } } = await servico.auth.getUser(token)
     if (!user) return falha('Sessão inválida. Entre de novo.', 401)
-    const { data: acesso } = await servico.from('processo_advogados').select('processo_id')
-      .eq('processo_id', corpo.processo_id).eq('advogado_id', user.id).maybeSingle()
-    if (!acesso) return falha('Processo não encontrado ou sem acesso.', 404)
-    const { data: p } = await servico.from('processos').select('*').eq('id', corpo.processo_id).single()
+    // Mesmas regras do banco: vinculado ao processo, visão geral no escritório ou responsável por um prazo dele
+    const { data: p } = await servico.from('processos').select('*').eq('id', corpo.processo_id).maybeSingle()
+    const { data: me } = await servico.from('advogados').select('escritorio_id,visao_geral,ativo').eq('id', user.id).maybeSingle()
+    let pode = Boolean(p && me?.ativo && me.escritorio_id === p.escritorio_id)
+    if (pode && !me!.visao_geral) {
+      const { data: v } = await servico.from('processo_advogados').select('processo_id').eq('processo_id', p.id).eq('advogado_id', user.id).maybeSingle()
+      const { data: z } = v ? { data: null } : await servico.from('prazos').select('id').eq('processo_id', p.id).eq('responsavel_id', user.id).limit(1).maybeSingle()
+      pode = Boolean(v || z)
+    }
+    if (!pode) return falha('Processo não encontrado ou sem acesso.', 404)
 
     const intervalo = Number(await lerConfig(servico, 'atualizar_agora_intervalo_min', 10))
     const recente = (iso: string | null) => iso && Date.now() - new Date(iso).getTime() < intervalo * 60_000
@@ -757,6 +849,12 @@ async function tratar(req: Request) {
     return resposta(await rodadaAvisos(servico))
   }
 
+  if (corpo.acao === 'rodada_descoberta') {
+    const { data: ok } = await servico.rpc('cron_segredo_confere', { p: req.headers.get('x-cron-secret') || '' })
+    if (!ok) return falha('Não autorizado.', 401)
+    return resposta(await rodadaDescoberta(servico))
+  }
+
   // ---------- Aba "Buscar processos": DJEN pelo nome da parte ----------
   if (corpo.acao === 'pesquisa') {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
@@ -771,15 +869,22 @@ async function tratar(req: Request) {
     try {
       const r = await pesquisarNome(nome, inicio, fim, tribunal)
       const processos = agruparPorProcesso(r.itens, nome)
-      // Marca os que o próprio advogado já tem no Orbeo (só os dele: o sigilo continua valendo)
+      // Marca os que já estão no escritório: com link se o advogado enxerga; sem link se for de um colega (sigilo)
       const numeros = processos.map(p => p.numero_cnj)
-      const meus = new Map<string, string>()
+      const { data: me } = await servico.from('advogados').select('escritorio_id,visao_geral').eq('id', user.id).maybeSingle()
+      const doEscritorio = new Map<string, string>(), meus = new Set<string>()
       for (let i = 0; i < numeros.length; i += 200) {
-        const { data } = await servico.from('processos').select('id,numero_cnj,processo_advogados!inner(advogado_id)')
-          .in('numero_cnj', numeros.slice(i, i + 200)).eq('processo_advogados.advogado_id', user.id)
-        for (const p of data || []) meus.set(p.numero_cnj, p.id)
+        const { data } = await servico.from('processos').select('id,numero_cnj,processo_advogados(advogado_id)')
+          .eq('escritorio_id', me?.escritorio_id).in('numero_cnj', numeros.slice(i, i + 200))
+        for (const p of data || []) {
+          doEscritorio.set(p.numero_cnj, p.id)
+          if (me?.visao_geral || (p.processo_advogados || []).some((x: any) => x.advogado_id === user.id)) meus.add(p.numero_cnj)
+        }
       }
-      for (const p of processos) p.processo_id = meus.get(p.numero_cnj) || null
+      for (const p of processos) {
+        p.processo_id = meus.has(p.numero_cnj) ? doEscritorio.get(p.numero_cnj) : null
+        p.no_escritorio = doEscritorio.has(p.numero_cnj)
+      }
       return resposta({ inicio, fim, publicacoes: r.itens.length, total: r.total, truncado: r.truncado, coberto_desde: r.coberto_desde, processos })
     } catch (e) { return falha((e as Error).message, e instanceof ErroDJEN && e.status === 429 ? 429 : 502) }
   }

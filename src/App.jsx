@@ -19,6 +19,8 @@ import Audiencias from './pages/Audiencias.jsx'
 import Prazos from './pages/Prazos.jsx'
 import Usuarios from './pages/Usuarios.jsx'
 import Pesquisa from './pages/Pesquisa.jsx'
+import Novos from './pages/Novos.jsx'
+import Escritorios from './pages/Escritorios.jsx'
 import TrocarSenhaObrigatoria from './pages/TrocarSenhaObrigatoria.jsx'
 import { TelaCentral } from './pages/Login.jsx'
 
@@ -39,6 +41,9 @@ export default function App() {
     if (!userId) { setPerfil(undefined); return }
     api.meuPerfil().then(setPerfil).catch(() => setPerfil(null))
   }, [userId])
+
+  // Estagiário: esconde botões de cadastro/edição (o banco também bloqueia)
+  useEffect(() => { document.body.classList.toggle('estagiario', perfil?.papel === 'estagiario') }, [perfil?.papel])
 
   let conteudo
   if (sessao === undefined || (sessao && perfil === undefined)) conteudo = <div className="login" aria-busy="true" />
@@ -61,6 +66,7 @@ export default function App() {
               <Route path="/processos" element={<Processos />} />
               <Route path="/processos/novo" element={<ProcessoForm />} />
               <Route path="/pesquisa" element={<Pesquisa />} />
+              <Route path="/novos" element={<Novos />} />
               <Route path="/processos/:id" element={<ProcessoDetalhe />} />
               <Route path="/processos/:id/editar" element={<ProcessoForm />} />
               <Route path="/audiencias" element={<Audiencias />} />
@@ -74,6 +80,7 @@ export default function App() {
               <Route path="/ajustes/fontes" element={<Fontes />} />
               <Route path="/ajustes/saude" element={<Saude />} />
               <Route path="/usuarios" element={perfil.admin ? <Usuarios /> : <Navigate to="/" replace />} />
+              <Route path="/escritorios" element={perfil.dono ? <Escritorios /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

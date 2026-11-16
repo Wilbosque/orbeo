@@ -5,6 +5,7 @@ import Icone from '../components/Icone.jsx'
 import { Campo, Carregando, Erro, Folha, Topo, useCarregar, useToast } from '../components/ui.jsx'
 import { UFS, iniciais } from '../lib/formato.js'
 import Oabs from '../components/Oabs.jsx'
+import { PAPEIS } from '../components/Prazos.jsx'
 
 function quando(iso) {
   if (!iso) return 'Nunca entrou'
@@ -25,8 +26,29 @@ function SenhaGerada({ senha, email, fechar }) {
   )
 }
 
+export const DESC_PAPEL = {
+  admin: 'Sócio administrador: cria e gerencia os usuários do escritório e decide quem tem visão geral.',
+  advogado: 'Cadastra clientes, processos, prazos e audiências. Vê os próprios processos (ou todos, se tiver visão geral).',
+  estagiario: 'Consulta os processos e dá cumprimento, com observação, aos prazos designados a ele. Não cadastra prazos.',
+}
+export function CamposAcesso({ papel, visao, setPapel, setVisao }) {
+  return (
+    <>
+      <Campo rotulo="Papel no escritório" ajuda={DESC_PAPEL[papel]}>
+        <select className="entrada" value={papel} onChange={e => setPapel(e.target.value)}>
+          {Object.entries(PAPEIS).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+        </select>
+      </Campo>
+      <label className="caixa-check">
+        <input type="checkbox" checked={visao} onChange={e => setVisao(e.target.checked)} />
+        <div><b>Visão geral dos processos do escritório</b><span>Vê todos os processos e clientes do escritório, não só os vinculados a ele. Sem isso, vale o sigilo entre advogados.</span></div>
+      </label>
+    </>
+  )
+}
+
 function NovoUsuario({ aoCriar }) {
-  const [f, setF] = useState({ nome: '', email: '', oab_numero: '', oab_uf: 'BA', admin: false })
+  const [f, setF] = useState({ nome: '', email: '', oab_numero: '', oab_uf: 'BA', papel: 'advogado', visao_geral: false })
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const set = k => e => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
@@ -46,10 +68,7 @@ function NovoUsuario({ aoCriar }) {
         <Campo rotulo="Nº da OAB" obrigatorio><input className="entrada mono" inputMode="numeric" value={f.oab_numero} onChange={set('oab_numero')} /></Campo>
         <Campo rotulo="UF"><select className="entrada" value={f.oab_uf} onChange={set('oab_uf')}>{UFS.map(u => <option key={u}>{u}</option>)}</select></Campo>
       </div>
-      <label className="caixa-check">
-        <input type="checkbox" checked={f.admin} onChange={set('admin')} />
-        <div><b>Administrador</b><span>Pode criar, desativar e excluir usuários. Não dá acesso aos processos dos outros.</span></div>
-      </label>
+      <CamposAcesso papel={f.papel} visao={f.visao_geral} setPapel={v => setF({ ...f, papel: v })} setVisao={v => setF({ ...f, visao_geral: v })} />
       <button className="btn primario bloco" disabled={salvando}>{salvando ? 'Criando…' : 'Criar usuário'}</button>
     </form>
   )
@@ -79,7 +98,7 @@ export default function Usuarios() {
       <Topo titulo="Usuários" sub={r.dados ? `${ativos} ativo${ativos === 1 ? '' : 's'} · ${lista.length} no total` : ' '} />
       <div className="aviso info" style={{ marginBottom: 12 }}>
         <Icone nome="info" />
-        <div>Administrar usuários não dá acesso aos processos de ninguém: cada advogado continua vendo só os processos em que está incluído.</div>
+        <div>Cada advogado vê só os processos em que está incluído. Quem tem <b>visão geral</b> vê todos os processos do escritório. Você decide isso em cada usuário, inclusive no seu.</div>
       </div>
       {r.erro && <Erro erro={r.erro} tentar={r.recarregar} />}
       {r.carregando && !r.dados ? <Carregando n={2} /> : (
@@ -93,7 +112,8 @@ export default function Usuarios() {
                 <div className="cartao-rodape" style={{ marginTop: 6 }}>
                   {oabsDe(u.id).length ? oabsDe(u.id).map(o => <span key={o.id} className="selo">OAB {o.numero}/{o.uf}</span>)
                     : u.oab_numero && <span className="selo">OAB {u.oab_numero}/{u.oab_uf}</span>}
-                  {u.admin && <span className="selo violeta">Admin</span>}
+                  <span className={`selo ${u.papel === 'admin' ? 'violeta' : ''}`}>{PAPEIS[u.papel || (u.admin ? 'admin' : 'advogado')]}</span>
+                  {u.visao_geral && <span className="selo">Visão geral</span>}
                   {!u.ativo && <span className="selo perigo">Desativado</span>}
                   {u.trocar_senha && u.ativo && <span className="selo alerta">Senha provisória</span>}
                 </div>
@@ -122,16 +142,23 @@ export default function Usuarios() {
               </>
             )}
             {sel.id === perfil.id ? (
-              <div className="aviso info"><Icone nome="info" />Este é o seu usuário. Para trocar sua senha, use Ajustes → Trocar senha.</div>
+              <>
+                <div className="aviso info"><Icone nome="info" />Este é o seu usuário. Para trocar sua senha, use Ajustes → Trocar senha.</div>
+                <label className="caixa-check">
+                  <input type="checkbox" checked={Boolean(sel.visao_geral)} disabled={ocupado}
+                    onChange={async e => { const v = e.target.checked; if (await agir(() => api.adminVisaoGeral(sel.id, v), v ? 'Visão geral ligada.' : 'Visão geral desligada.')) setSel({ ...sel, visao_geral: v }) }} />
+                  <div><b>Minha visão geral dos processos do escritório</b><span>Ligada, você vê todos os processos e clientes do escritório.</span></div>
+                </label>
+              </>
             ) : (
               <>
                 <button className="btn bloco" disabled={ocupado} onClick={async () => {
                   const res = await agir(() => api.adminRedefinirSenha(sel.id))
                   if (res?.res?.senha_temporaria) { setSenha({ senha: res.res.senha_temporaria, email: sel.email }); setSel(null) }
                 }}><Icone nome="cadeado" />Gerar nova senha provisória</button>
-                <button className="btn bloco" disabled={ocupado} onClick={async () => { if (await agir(() => api.adminTornarAdmin(sel.id, !sel.admin), sel.admin ? 'Deixou de ser administrador.' : 'Agora é administrador.')) setSel(null) }}>
-                  <Icone nome="usuarios" />{sel.admin ? 'Retirar perfil de administrador' : 'Tornar administrador'}
-                </button>
+                <CamposAcesso papel={sel.papel || (sel.admin ? 'admin' : 'advogado')} visao={Boolean(sel.visao_geral)}
+                  setPapel={async v => { if (await agir(() => api.adminPapel(sel.id, v), `Agora é ${PAPEIS[v].toLowerCase()}.`)) setSel({ ...sel, papel: v, admin: v === 'admin' }) }}
+                  setVisao={async v => { if (await agir(() => api.adminVisaoGeral(sel.id, v), v ? 'Visão geral ligada.' : 'Visão geral desligada: vale o sigilo.')) setSel({ ...sel, visao_geral: v }) }} />
                 <button className="btn bloco" disabled={ocupado} onClick={async () => {
                   if (sel.ativo && !window.confirm(`Desativar o acesso de ${sel.nome || sel.email}? Ele(a) não conseguirá entrar, mas nada é apagado.`)) return
                   if (await agir(() => api.adminAtivar(sel.id, !sel.ativo), sel.ativo ? 'Acesso desativado.' : 'Acesso reativado.')) setSel(null)

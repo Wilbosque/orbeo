@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import * as api from '#backend'
 import Icone from '../components/Icone.jsx'
-import { CumprirForm, ItemPrazoLista, PrazoForm } from '../components/Prazos.jsx'
+import { CumprirForm, ItemPrazoLista, PainelPrazo } from '../components/Prazos.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { hojeSP } from '../lib/audiencia.js'
 import { normalizar } from '../lib/formato.js'
@@ -39,8 +39,8 @@ export default function Prazos() {
     toast(`${z.id ? 'Prazo atualizado' : 'Prazo cadastrado'}. Fatal: ${salvo.prazo_fatal.split('-').reverse().join('/')}.`)
     setForm(null); r.recarregar()
   }
-  async function marcarCumprido(z, data) {
-    try { await api.cumprirPrazo(z.id, data); toast('Prazo marcado como cumprido.'); setCumprir(null); r.recarregar() } catch (e) { toast(e.message, 'erro') }
+  async function marcarCumprido(z, data, obs) {
+    try { await api.cumprirPrazo(z.id, data, obs); toast('Prazo marcado como cumprido.'); setCumprir(null); r.recarregar() } catch (e) { toast(e.message, 'erro') }
   }
   async function excluir(z) {
     if (!window.confirm('Excluir este prazo?')) return
@@ -64,18 +64,16 @@ export default function Prazos() {
           <div className="lista">{l.map(z => <ItemPrazoLista key={z.id} z={z} onAbrir={x => setForm({ inicial: x })} onCumprir={setCumprir} />)}</div>
         </div>
       ))}
-      <button className="fab" onClick={() => setForm({ inicial: {} })}><Icone nome="mais_add" />Prazo</button>
+      <button className="fab so-editor" onClick={() => setForm({ inicial: {} })}><Icone nome="mais_add" />Prazo</button>
 
-      <Folha titulo={form?.inicial?.id ? 'Editar prazo' : 'Novo prazo'} aberta={Boolean(form)} fechar={() => setForm(null)}>
-        {form && <>
-          {form.inicial?.id && <div className="muted" style={{ marginTop: -8, marginBottom: 12 }}>{form.inicial.cliente} · {form.inicial.numero_cnj}</div>}
-          {form.inicial?.status === 'cumprido' && <button className="btn bloco" style={{ marginBottom: 12 }} onClick={async () => { await api.reabrirPrazo(form.inicial.id); toast('Prazo reaberto.'); setForm(null); r.recarregar() }}>Reabrir prazo</button>}
-          <PrazoForm key={form.inicial?.id || 'novo'} inicial={form.inicial} processoFixo={form.inicial?.processo_id}
-            aoSalvar={salvar} aoExcluir={form.inicial?.id ? () => excluir(form.inicial) : null} />
-        </>}
+      <Folha titulo={form?.inicial?.id ? 'Prazo' : 'Novo prazo'} aberta={Boolean(form)} fechar={() => setForm(null)}>
+        {form && <PainelPrazo inicial={form.inicial} processoFixo={form.inicial?.processo_id} aoSalvar={salvar}
+          aoExcluir={form.inicial?.id ? () => excluir(form.inicial) : null}
+          aoReabrir={async () => { await api.reabrirPrazo(form.inicial.id); toast('Prazo reaberto.'); setForm(null); r.recarregar() }}
+          aoCumprir={z => { setForm(null); setCumprir(z) }} />}
       </Folha>
       <Folha titulo="Prazo cumprido" aberta={Boolean(cumprir)} fechar={() => setCumprir(null)}>
-        {cumprir && <CumprirForm z={cumprir} aoConfirmar={d => marcarCumprido(cumprir, d)} />}
+        {cumprir && <CumprirForm z={cumprir} aoConfirmar={(d, obs) => marcarCumprido(cumprir, d, obs)} />}
       </Folha>
     </>
   )

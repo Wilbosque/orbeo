@@ -26,7 +26,7 @@ export default function ClienteDetalhe() {
   return (
     <>
       <Topo titulo={c.nome_fantasia || c.nome} sub={c.tipo === 'PJ' ? 'Empresa' : 'Pessoa física'} voltar="/clientes"
-        acoes={<Link to={`/clientes/${id}/editar`} className="icone-btn" aria-label="Editar cliente"><Icone nome="editar" /></Link>} />
+        acoes={<Link to={`/clientes/${id}/editar`} className="icone-btn so-editor" aria-label="Editar cliente"><Icone nome="editar" /></Link>} />
 
       <div className="kpis">
         <div className="kpi destaque"><span className="rotulo">Processos ativos</span><span className="valor">{ativos.length}</span></div>
@@ -49,14 +49,14 @@ export default function ClienteDetalhe() {
       <div className="cartao">
         {termos.length ? <div className="termos">{termos.map(t => <span key={t.id} className="termo" style={{ paddingRight: 12 }}>{t.valor}</span>)}</div>
           : <span className="muted">Nenhum nome de busca cadastrado: a busca usa a razão social.</span>}
-        <small className="muted" style={{ display: 'block', marginTop: 8 }}>Busca publicações com o nome do cliente para encontrar processos que ainda não estão no Orbeo. <Link className="link-btn" style={{ padding: 0 }} to={`/clientes/${id}/editar`}>Editar nomes de busca</Link></small>
+        <small className="muted" style={{ display: 'block', marginTop: 8 }}>Todo dia o Orbeo procura no DJEN publicações com esses nomes. Processo que ainda não está no sistema gera um aviso para os advogados deste cliente (em Processos novos). <Link className="link-btn" style={{ padding: 0 }} to={`/clientes/${id}/editar`}>Editar nomes de busca</Link></small>
       </div>
 
       <div className="secao"><h2>Processos ({processos.length})</h2></div>
       {processos.length === 0 ? <Vazio titulo="Sem processos" texto="Nenhum processo deste cliente está na sua lista." /> :
         <div className="lista grade">{processos.map(p => <CartaoProcesso key={p.id} p={p} />)}</div>}
 
-      <div style={{ marginTop: 28 }}>
+      <div style={{ marginTop: 28 }} className="so-editor">
         <button className="btn perigo bloco" onClick={excluir}><Icone nome="lixo" />Excluir cliente</button>
       </div>
       <Fab to={`/processos/novo?cliente=${id}`} rotulo="Processo" />

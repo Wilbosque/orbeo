@@ -55,7 +55,9 @@ async function uid() {
 // ---------- Advogados ----------
 export async function meuPerfil() {
   const id = await uid()
-  return ok(await sb.from('advogados').select('*, advogado_oabs(id,numero,uf,principal)').eq('id', id).maybeSingle())
+  const p = ok(await sb.from('advogados').select('*, advogado_oabs(id,numero,uf,principal), escritorios(nome)').eq('id', id).maybeSingle())
+  if (p) p.dono = Boolean((await sb.rpc('sou_dono_plataforma')).data)
+  return p
 }
 export async function salvarPerfil({ nome, oab_numero, oab_uf }) {
   const id = await uid()
@@ -70,7 +72,7 @@ export async function salvarPerfil({ nome, oab_numero, oab_uf }) {
   return perfil
 }
 export async function listarAdvogados() {
-  return ok(await sb.from('advogados').select('id,nome,oab_numero,oab_uf,advogado_oabs(numero,uf,principal)').order('nome'))
+  return ok(await sb.from('advogados').select('id,nome,oab_numero,oab_uf,papel,ativo,advogado_oabs(numero,uf,principal)').order('nome'))
 }
 // OABs (inscrição principal e suplementares). advogadoId vazio = o próprio usuário
 export async function listarOabs(advogadoId) {
@@ -182,11 +184,13 @@ export async function prazosDoDia() {
 
 // ---------- Resumo (Início) ----------
 export async function resumo() {
-  const [proc, cli, pub, sug] = await Promise.all([
+  const eu = await uid()
+  const [proc, cli, pub, sug, desc] = await Promise.all([
     sb.from('processos').select('situacao'),
     sb.from('clientes').select('id', { count: 'exact', head: true }),
     sb.from('publicacoes').select('id', { count: 'exact', head: true }).eq('status', 'nova'),
     sb.from('sugestoes').select('tipo').eq('status', 'pendente'),
+    sb.from('descoberta_avisos').select('id', { count: 'exact', head: true }).eq('advogado_id', eu).eq('status', 'pendente'),
   ])
   const ps = ok(proc)
   return {
@@ -197,6 +201,7 @@ export async function resumo() {
     sugestoesPendentes: (sug.data || []).length,
     sugestoesSuspensao: (sug.data || []).filter(s => s.tipo === 'suspensao').length,
     sugestoesAudiencia: (sug.data || []).filter(s => s.tipo === 'audiencia').length,
+    processosNovos: desc.count || 0,
   }
 }
 
@@ -267,11 +272,25 @@ const admin = (acao, dados = {}) => invocar('admin-usuarios', { acao, ...dados }
 export const adminListar = async () => (await admin('listar')).usuarios
 export const adminCriar = d => admin('criar', d)
 export const adminAtivar = (id, ativo) => admin(ativo ? 'reativar' : 'desativar', { id })
-export const adminTornarAdmin = (id, valor) => admin('admin', { id, admin: valor })
+export const adminTornarAdmin = (id, valor) => admin('papel', { id, papel: valor ? 'admin' : 'advogado' })
+export const adminPapel = (id, papel) => admin('papel', { id, papel })
+export const adminVisaoGeral = (id, visao_geral) => admin('visao', { id, visao_geral })
+// Escritórios (só o dono da plataforma)
+export async function listarEscritorios() { return ok(await sb.rpc('listar_escritorios')) }
+export const criarEscritorio = d => admin('escritorio_criar', d)
+export const ativarEscritorio = (id, ativo) => admin('escritorio_ativar', { escritorio_id: id, ativo })
 export const adminRedefinirSenha = id => admin('redefinir_senha', { id })
 export const adminExcluir = id => admin('excluir', { id })
 
 // ---------- DataJud ----------
+// ---------- Processos novos identificados (descoberta diária) ----------
+export async function listarDescobertas({ historico = false } = {}) {
+  let q = sb.from('vw_descobertas').select('*')
+  if (!historico) q = q.eq('meu', true).eq('status', 'pendente')
+  return ok(await q.order('notificado_em', { ascending: false }).limit(historico ? 300 : 100))
+}
+export async function decidirDescoberta(avisoId, status) { ok(await sb.rpc('decidir_descoberta', { p_aviso: avisoId, p_status: status })) }
+
 // ---------- Notificações ----------
 export const pushChavePublica = async () => (await invocar('datajud-sync', { acao: 'push_chave' })).publica
 export async function salvarInscricaoPush(sub, aparelho) {
@@ -347,10 +366,14 @@ export async function salvarPrazo(z) {
     ? ok(await sb.from('prazos').update(campos).eq('id', z.id).select().single())
     : ok(await sb.from('prazos').insert(campos).select().single())
 }
-export async function cumprirPrazo(id, data) {
-  return ok(await sb.from('prazos').update({ status: 'cumprido', data_cumprimento: data }).eq('id', id).select().single())
+export async function cumprirPrazo(id, data, obs = null) {
+  ok(await sb.rpc('cumprir_prazo', { p_id: id, p_data: data, p_obs: obs }))
 }
+export async function historicoPrazo(id) {
+  return ok(await sb.from('vw_prazo_historico').select('*').eq('prazo_id', id).order('em'))
+}
+export async function observarPrazo(id, texto) { ok(await sb.rpc('observar_prazo', { p_id: id, p_texto: texto })) }
 export async function reabrirPrazo(id) {
-  return ok(await sb.from('prazos').update({ status: 'aberto', data_cumprimento: null }).eq('id', id).select().single())
+  return ok(await sb.from('prazos').update({ status: 'aberto', data_cumprimento: null, cumprido_por: null, cumprimento_obs: null }).eq('id', id).select().single())
 }
 export async function excluirPrazo(id) { ok(await sb.from('prazos').delete().eq('id', id)) }

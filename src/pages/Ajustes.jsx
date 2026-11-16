@@ -91,6 +91,7 @@ export default function Ajustes() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h3 style={{ margin: 0 }}>{perfil.nome}</h3>
           <div className="linha" style={{ whiteSpace: 'normal' }}>{oabsTexto(perfil)}</div>
+          <div className="linha">{perfil.escritorios?.nome}{perfil.papel ? ` · ${{ admin: 'Sócio administrador', advogado: 'Advogado', estagiario: 'Estagiário' }[perfil.papel]}` : ''}</div>
           <div className="linha">{email}</div>
         </div>
       </div>
@@ -108,6 +109,7 @@ export default function Ajustes() {
       <div className="lista">
         <Link to="/clientes" className="cartao so-celular" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="clientes" width="22" height="22" /><b style={{ flex: 1 }}>Clientes</b><Icone nome="seta" width="18" height="18" /></Link>
         <Link to="/suspensoes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="calendario" width="22" height="22" /><b style={{ flex: 1 }}>Suspensões de prazo</b><Icone nome="seta" width="18" height="18" /></Link>
+        {perfil.dono && <Link to="/escritorios" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="balanca" width="22" height="22" /><b style={{ flex: 1 }}>Escritórios da plataforma</b><span className="selo violeta">Dono</span><Icone nome="seta" width="18" height="18" /></Link>}
         {perfil.admin && <Link to="/usuarios" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="usuarios" width="22" height="22" /><b style={{ flex: 1 }}>Usuários do sistema</b><span className="selo violeta">Admin</span><Icone nome="seta" width="18" height="18" /></Link>}
         <Link to="/ajustes/saude" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="saude" width="22" height="22" /><b style={{ flex: 1 }}>Saúde das consultas</b><Icone nome="seta" width="18" height="18" /></Link>
         <Link to="/ajustes/fontes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="radar" width="22" height="22" /><b style={{ flex: 1 }}>Fontes dos diários (varredura)</b><Icone nome="seta" width="18" height="18" /></Link>

@@ -133,7 +133,7 @@ export default function Audiencias() {
         </>
       )}
 
-      <button className="fab" onClick={() => setForm({ inicial: {} })}><Icone nome="mais_add" />Audiência</button>
+      <button className="fab so-editor" onClick={() => setForm({ inicial: {} })}><Icone nome="mais_add" />Audiência</button>
 
       <Folha titulo={dia ? rotuloDia(dia) : ''} aberta={Boolean(dia) && !form} fechar={() => setDia(null)}>
         {(() => { const l = todas.filter(a => dia && diaSP(a.data_hora) === dia); return l.length

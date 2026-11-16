@@ -6,7 +6,7 @@ import Icone from '../components/Icone.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { POLOS, SITUACOES, data, iniciais, moeda, oabsTexto } from '../lib/formato.js'
 import { AudienciaForm, ItemAudiencia } from '../components/Audiencias.jsx'
-import { CumprirForm, ItemPrazoLista, PrazoForm } from '../components/Prazos.jsx'
+import { CumprirForm, ItemPrazoLista, PainelPrazo } from '../components/Prazos.jsx'
 import { INSTANCIAS, RITOS, prazoNoTexto } from '../lib/prazo.js'
 
 const diasDesde = iso => Math.floor((Date.now() - new Date(iso)) / 86400000)
@@ -146,7 +146,7 @@ export default function ProcessoDetalhe() {
   return (
     <>
       <Topo titulo={p.cliente_nome} sub={`${POLOS[p.polo]} · ${p.tribunal}`} voltar="/processos"
-        acoes={<Link to={`/processos/${id}/editar`} className="icone-btn" aria-label="Editar processo"><Icone nome="editar" /></Link>} />
+        acoes={<Link to={`/processos/${id}/editar`} className="icone-btn so-editor" aria-label="Editar processo"><Icone nome="editar" /></Link>} />
 
       <div className="cartao">
         <div className="cartao-topo">
@@ -198,12 +198,12 @@ export default function ProcessoDetalhe() {
         </dl>
       </div>
 
-      <div className="secao"><h2>Audiências</h2><button className="btn pequeno" onClick={() => setFormAud({})}>+ Audiência</button></div>
+      <div className="secao"><h2>Audiências</h2><button className="btn pequeno so-editor" onClick={() => setFormAud({})}>+ Audiência</button></div>
       {auds.dados?.length ? (
         <div className="lista">{auds.dados.map(a => <ItemAudiencia key={a.id} a={a} mostrarProcesso={false} onAbrir={x => setFormAud(x)} />)}</div>
       ) : <div className="cartao muted">Nenhuma audiência cadastrada para este processo.</div>}
 
-      <div className="secao"><h2>Prazos</h2><button className="btn pequeno" onClick={() => setFormPrazo({})}>+ Prazo</button></div>
+      <div className="secao"><h2>Prazos</h2><button className="btn pequeno so-editor" onClick={() => setFormPrazo({})}>+ Prazo</button></div>
       {przs.dados?.length ? (
         <div className="lista">{[...przs.dados].sort((a, b) => (a.status === b.status ? 0 : a.status === 'aberto' ? -1 : 1)).map(z =>
           <ItemPrazoLista key={z.id} z={z} mostrarProcesso={false} onAbrir={x => setFormPrazo(x)} onCumprir={setCumprir} />)}</div>
@@ -211,20 +211,20 @@ export default function ProcessoDetalhe() {
 
       <div className="secao">
         <h2>Advogados ({p.advogados.length})</h2>
-        {foraDoProcesso.length > 0 && <button className="btn pequeno" onClick={() => setFolhaAdv(true)}>Incluir</button>}
+        {foraDoProcesso.length > 0 && <button className="btn pequeno so-editor" onClick={() => setFolhaAdv(true)}>Incluir</button>}
       </div>
       <div className="lista">
         {p.advogados.map(a => (
           <div key={a.id} className="cartao" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
             <span className="avatar" style={{ width: 36, height: 36 }}>{iniciais(a.nome)}</span>
             <div style={{ flex: 1 }}><b>{a.nome}</b>{a.id === perfil.id && <span className="muted"> (você)</span>}</div>
-            {p.advogados.length > 1 && <button className="btn pequeno perigo" onClick={() => retirar(a)}>{a.id === perfil.id ? 'Sair' : 'Retirar'}</button>}
+            {p.advogados.length > 1 && <button className="btn pequeno perigo so-editor" onClick={() => retirar(a)}>{a.id === perfil.id ? 'Sair' : 'Retirar'}</button>}
           </div>
         ))}
       </div>
       <small className="muted" style={{ display: 'block', marginTop: 8 }}>Só os advogados listados enxergam este processo, as publicações, os prazos e as anotações dele.</small>
 
-      <div style={{ marginTop: 28 }}>
+      <div style={{ marginTop: 28 }} className="so-editor">
         <button className="btn perigo bloco" onClick={excluir}><Icone nome="lixo" />Excluir processo</button>
       </div>
 
@@ -234,13 +234,15 @@ export default function ProcessoDetalhe() {
           aoExcluir={formAud.id ? async () => { if (!window.confirm('Excluir esta audiência?')) return; await api.excluirAudiencia(formAud.id); toast('Audiência excluída.'); setFormAud(null); auds.recarregar() } : null} />}
       </Folha>
 
-      <Folha titulo={formPrazo?.id ? 'Editar prazo' : 'Novo prazo'} aberta={Boolean(formPrazo)} fechar={() => setFormPrazo(null)}>
-        {formPrazo && <PrazoForm key={formPrazo.id || 'novo'} inicial={formPrazo} processoFixo={id}
+      <Folha titulo={formPrazo?.id ? 'Prazo' : 'Novo prazo'} aberta={Boolean(formPrazo)} fechar={() => setFormPrazo(null)}>
+        {formPrazo && <PainelPrazo inicial={formPrazo} processoFixo={id}
+          aoReabrir={async () => { await api.reabrirPrazo(formPrazo.id); toast('Prazo reaberto.'); setFormPrazo(null); przs.recarregar() }}
+          aoCumprir={z => { setFormPrazo(null); setCumprir(z) }}
           aoSalvar={async z => { const s = await api.salvarPrazo(z); toast(`Prazo salvo. Fatal: ${s.prazo_fatal.split('-').reverse().join('/')}.`); setFormPrazo(null); przs.recarregar(); r.recarregar() }}
           aoExcluir={formPrazo.id ? async () => { if (!window.confirm('Excluir este prazo?')) return; await api.excluirPrazo(formPrazo.id); toast('Prazo excluído.'); setFormPrazo(null); przs.recarregar() } : null} />}
       </Folha>
       <Folha titulo="Prazo cumprido" aberta={Boolean(cumprir)} fechar={() => setCumprir(null)}>
-        {cumprir && <CumprirForm z={cumprir} aoConfirmar={async d => { await api.cumprirPrazo(cumprir.id, d); toast('Prazo marcado como cumprido.'); setCumprir(null); przs.recarregar() }} />}
+        {cumprir && <CumprirForm z={cumprir} aoConfirmar={async (d, obs) => { await api.cumprirPrazo(cumprir.id, d, obs); toast('Prazo marcado como cumprido.'); setCumprir(null); przs.recarregar() }} />}
       </Folha>
 
       <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>

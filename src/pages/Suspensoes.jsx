@@ -53,7 +53,7 @@ function PrazosAfetados({ s }) {
   )
 }
 
-const VAZIO = { abrangencia: 'tribunal', instancia: 'todas', tribunal: '', comarca: '', orgao: '', data_inicio: '', data_fim: '', hora_inicio: '', tipo: 'ato', motivo: '', numero_ato: '', link_ato: '' }
+const VAZIO = { abrangencia: '', instancia: '', tribunal: '', comarca: '', orgao: '', data_inicio: '', data_fim: '', hora_inicio: '', tipo: 'ato', motivo: '', numero_ato: '', link_ato: '' }
 
 export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Salvar suspensão', somenteLeitura }) {
   const [f, setF] = useState({ ...VAZIO, ...inicial, hora_inicio: inicial?.hora_inicio ? String(inicial.hora_inicio).slice(0, 5) : '' })
@@ -74,6 +74,8 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
   }
   const precisaComarca = ['comarca', 'orgao'].includes(f.abrangencia)
   const erros = {
+    abrangencia: !f.abrangencia ? 'Informe se vale para o país, o tribunal, uma comarca ou uma vara.' : '',
+    instancia: !f.instancia ? 'Informe se abrange o 2º grau.' : '',
     tribunal: varios ? (!tribs.length ? 'Marque pelo menos um tribunal.' : '') : f.abrangencia !== 'nacional' && !f.tribunal ? 'Informe o tribunal.' : '',
     comarca: precisaComarca && !f.comarca ? 'Informe a comarca.' : '',
     orgao: f.abrangencia === 'orgao' && !f.orgao ? 'Informe a vara.' : '',
@@ -98,6 +100,7 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
       <fieldset disabled={somenteLeitura} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 16 }}>
         <Campo rotulo="Abrangência">
           <Segmentado rotulo="Abrangência" valor={f.abrangencia} onChange={v => set('abrangencia', v)} opcoes={ABRANGENCIAS} />
+          {e('abrangencia') && <small className="erro">{e('abrangencia')}</small>}
         </Campo>
         {varios && (
           <Campo rotulo="Tribunais" obrigatorio erro={e('tribunal')} ajuda="Marque todos os tribunais alcançados pelo ato. Cada um vira uma suspensão própria.">
@@ -137,10 +140,13 @@ export function SuspensaoForm({ inicial, aoSalvar, aoExcluir, rotuloSalvar = 'Sa
             <input className={`entrada ${e('orgao') ? 'invalida' : ''}`} value={f.orgao || ''} onChange={x => set('orgao', x.target.value)} />
           </Campo>
         )}
-        <Campo rotulo="Instância" ajuda="No TJBA, por exemplo, o calendário do 1º grau/Juizados é diferente do 2º grau/Turmas Recursais.">
-          <Segmentado rotulo="Instância" valor={f.instancia || 'todas'} onChange={v => set('instancia', v)}
-            opcoes={[['todas', 'Todas'], ['1g', '1º grau / Juizados'], ['2g', '2º grau / Turmas']]} />
+        <Campo rotulo="Abrange quais graus?" obrigatorio erro={e('instancia')} ajuda="No TJBA, por exemplo, o calendário do 1º grau/Juizados é diferente do 2º grau/Turmas Recursais.">
+          <Segmentado rotulo="Graus alcançados" valor={f.instancia} onChange={v => set('instancia', v)}
+            opcoes={[['todas', '1º e 2º graus'], ['1g', 'Só 1º grau / Juizados'], ['2g', 'Só 2º grau / Turmas']]} />
         </Campo>
+        {!somenteLeitura && !f.id && f.abrangencia && f.abrangencia !== 'nacional' && (
+          <small className="muted">Outros escritórios que usam o Orbeo e têm processos alcançados por esta suspensão recebem como sugestão, para conferirem e confirmarem. O nome do seu escritório não aparece.</small>
+        )}
         <div className="duas">
           <Campo rotulo="Início" obrigatorio erro={e('data_inicio')}>
             <input className={`entrada ${e('data_inicio') ? 'invalida' : ''}`} type="date" value={f.data_inicio} onChange={x => set('data_inicio', x.target.value)} />
@@ -298,7 +304,7 @@ export default function Suspensoes() {
       <Topo titulo="Suspensões de prazo" sub="Feriados, recessos e atos dos tribunais" voltar="/ajustes"
         acoes={<>
           <button className="icone-btn" onClick={exportar} aria-label="Exportar para calendário (.ics)" title="Exportar para Google Agenda (.ics)"><Icone nome="exportar" /></button>
-          <button className="icone-btn" onClick={() => setForm({ inicial: { data_inicio: hoje() } })} aria-label="Cadastrar suspensão"><Icone nome="mais_add" /></button>
+          <button className="icone-btn so-editor" onClick={() => setForm({ inicial: { data_inicio: hoje() } })} aria-label="Cadastrar suspensão"><Icone nome="mais_add" /></button>
         </>} />
 
       {sugestoes.length > 0 && (
@@ -342,7 +348,7 @@ export default function Suspensoes() {
       <Folha titulo={dia ? new Date(dia + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) : ''} aberta={Boolean(dia) && !form} fechar={() => setDia(null)}>
         {doDiaEscolhido.length === 0 ? <p className="muted" style={{ marginTop: 0 }}>Nenhuma suspensão neste dia{filtro !== 'todos' ? ' para o filtro escolhido' : ''}.</p>
           : <div className="lista">{doDiaEscolhido.map(s => <ItemSuspensao key={s.id} s={s} onAbrir={abrir} />)}</div>}
-        <button className="btn primario bloco" style={{ marginTop: 14 }} onClick={() => setForm({ inicial: { data_inicio: dia } })}><Icone nome="mais_add" />Cadastrar suspensão neste dia</button>
+        <button className="btn primario bloco so-editor" style={{ marginTop: 14 }} onClick={() => setForm({ inicial: { data_inicio: dia } })}><Icone nome="mais_add" />Cadastrar suspensão neste dia</button>
       </Folha>
 
       <Folha titulo={form?.inicial?.id ? (form.inicial.fonte === 'regra' ? 'Suspensão nacional' : 'Editar suspensão') : 'Nova suspensão'} aberta={Boolean(form)} fechar={() => setForm(null)}>

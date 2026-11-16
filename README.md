@@ -98,6 +98,20 @@ Orbeo salvo na Tela de Início pelo Safari e aberto pelo ícone. Os avisos autom
 Rode `supabase/migracoes/08_varias_oabs.sql` (depois da 07). Cada advogado inclui as inscrições
 suplementares em Ajustes → Meus dados e OAB; o administrador também pode incluir pela tela Usuários.
 
+## 1.11 Processos novos (busca diária pelo nome do cliente)
+
+Rode `supabase/migracoes/09_processos_novos.sql` (depois da 08), publique de novo a função `datajud-sync`
+e rode de novo o `02_agendamentos.sql` (ele cria o agendamento `orbeo-processos-novos`, às 8h).
+Os nomes buscados são os "nomes de busca" de cada cliente (ou a razão social, para empresas sem nenhum).
+O aviso vai só para os advogados vinculados ao cliente; tudo fica registrado em Processos novos → Histórico.
+
+## 1.12 Vários escritórios, papéis e histórico de prazos
+
+Rode `supabase/migracoes/10_escritorios.sql` (depois da 09) e publique de novo as DUAS funções
+(`admin-usuarios` e `datajud-sync`). Os dados atuais vão para o "Escritório principal"; os administradores
+atuais viram sócios administradores e donos da plataforma. Ninguém ganha visão geral sozinho: o sigilo continua
+até o sócio administrador ligar a visão geral de alguém em Usuários.
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.
