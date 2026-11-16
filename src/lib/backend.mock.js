@@ -184,7 +184,9 @@ export async function linhaDoTempo(pid) {
   await atraso()
   if (pid !== 'p1') return []
   return [
-    { origem: 'publicacao', item_id: 'x1', quando: '2026-11-10T00:00:00-03:00', titulo: 'Intimação · Despacho', detalhe: 'Intime-se a parte ré para, no prazo de 15 (quinze) dias, apresentar contestação...', nova: true, anotacoes: [] },
+    { origem: 'publicacao', item_id: 'x1', quando: '2026-11-10T12:00:00-03:00', titulo: 'Despacho', nova: !db._pubLida,
+      detalhe: 'PODER JUDICIÁRIO DO ESTADO DA BAHIA\n5ª VARA DO SISTEMA DOS JUIZADOS ESPECIAIS DO CONSUMIDOR\n\nDESPACHO\n\nVistos etc. Considerando a juntada da petição de ID 4512, intime-se a parte ré para, no prazo de 5 (cinco) dias, manifestar-se sobre os documentos apresentados pela parte autora, sob pena de preclusão. Após, voltem-me conclusos para sentença. Salvador, 07 de novembro de 2026. Juiz de Direito.',
+      extra: { tipo_comunicacao: 'Intimação', orgao: '5ª VSJE do Consumidor', link: 'https://comunica.pje.jus.br/', disponibilizacao: '2026-11-10', status: db._pubPrazo ? 'prazo_criado' : 'nova' }, anotacoes: [] },
     { origem: 'movimentacao', item_id: 'x2', quando: '2026-11-07T14:12:00-03:00', titulo: 'Expedição de documento', detalhe: 'Intimação', nova: true, anotacoes: [] },
     { origem: 'movimentacao', item_id: 'x3', quando: '2026-10-20T09:30:00-03:00', titulo: 'Distribuição', detalhe: 'Sorteio', nova: false,
       anotacoes: [{ tipo: 'observacao', texto: 'Cliente informou que houve tentativa de acordo pelo WhatsApp.', em: '2026-10-21T10:00:00-03:00' }] },
@@ -321,13 +323,14 @@ export async function atualizarDataJud(pid) {
   const p = db.processos.find(x => x.id === pid)
   const primeira = !p.datajud_sync_em
   if (p.datajud_sync_em && Date.now() - new Date(p.datajud_sync_em) < 600000) return { novos: 0, aviso: 'Consultado há pouco. Tente de novo em 10 min. (O DataJud atualiza uma vez por dia.)' }
-  p.datajud_sync_em = new Date().toISOString()
+  p.datajud_sync_em = p.djen_sync_em = new Date().toISOString()
+  p.datajud_atualizado_em = '2026-10-02T09:12:00.000Z'
   if (!p.comarca) p.comarca = 'Salvador'
   if (!p.classe) p.classe = 'Procedimento do Juizado Especial Cível'
   gravar()
-  return primeira ? { novos: 0, total: 14, importados: 14 } : { novos: 1, total: 15 }
+  return primeira ? { novos: 0, total: 14, importados: 14, publicacoes_novas: pid === 'p1' ? 1 : 0 } : { novos: 1, total: 15, publicacoes_novas: 0 }
 }
-export async function marcarVistas(pid) { await atraso(); const p = db.processos.find(x => x.id === pid); if (p) p._visto = true; gravar(); return 1 }
+export async function marcarVistas(pid) { await atraso(); if (pid === 'p1') db._pubLida = true; const p = db.processos.find(x => x.id === pid); if (p) p._visto = true; gravar(); return 1 }
 export async function saudeConsultas() {
   await atraso()
   const h = n => new Date(Date.now() - n * 3600000).toISOString()
@@ -403,6 +406,7 @@ export async function listarPrazos(f = {}) {
 export async function salvarPrazo(z) {
   await atraso(200)
   if (!podeVerProcesso(z.processo_id)) throw new Error('Você não tem acesso a este registro.')
+  if (z.publicacao_id === 'x1') db._pubPrazo = true
   const p = db.processos.find(x => x.id === z.processo_id)
   let reg = { status: 'aberto', ...z, calculo_auto: z.calculo_auto !== false }
   if (z.audiencia_id) {
@@ -419,3 +423,21 @@ export async function salvarPrazo(z) {
 export async function cumprirPrazo(id, data) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'cumprido'; z.data_cumprimento = data; gravar(); return z }
 export async function reabrirPrazo(id) { await atraso(); const z = db.prazos.find(x => x.id === id); z.status = 'aberto'; z.data_cumprimento = null; gravar(); return z }
 export async function excluirPrazo(id) { await atraso(); db.prazos = db.prazos.filter(z => z.id !== id); gravar() }
+
+// ---------- Buscar processos no DJEN (demonstração) ----------
+export async function pesquisarDJEN({ nome, inicio, fim }) {
+  await atraso(1400)
+  const meu = db.processos.find(p => podeVerProcesso(p.id))
+  const N = nome.toUpperCase()
+  return { inicio, fim, publicacoes: 5, total: 5, truncado: false, coberto_desde: null, processos: [
+    { numero_cnj: '8004567-12.2026.8.05.0001', tribunal: 'TJBA', orgao_julgador: '12ª Vara do Sistema dos Juizados Especiais do Consumidor', classe: 'Procedimento do Juizado Especial Cível',
+      partes: [{ nome: 'CARLA MENDES DE OLIVEIRA', polo: 'A' }, { nome: N, polo: 'P' }], publicacoes: 2, primeira: menosDias(9), ultima: menosDias(3), ultimo_tipo: 'Despacho',
+      ultimo_trecho: 'Designo audiência de conciliação para o dia 09/12/2026, às 10h, por videoconferência. Cite-se e intime-se a parte ré.', link: 'https://comunica.pje.jus.br/', polo_pesquisado: 'reu', processo_id: null },
+    { numero_cnj: '0012345-67.2026.8.05.0080', tribunal: 'TJBA', orgao_julgador: '2ª Vara Cível de Feira de Santana', classe: 'Procedimento Comum Cível',
+      partes: [{ nome: N, polo: 'A' }, { nome: 'VIAGENS BRASIL AGÊNCIA LTDA', polo: 'P' }], publicacoes: 1, primeira: menosDias(6), ultima: menosDias(6), ultimo_tipo: 'Decisão',
+      ultimo_trecho: 'Defiro a tutela de urgência requerida...', link: null, polo_pesquisado: 'autor', processo_id: null },
+    { numero_cnj: meu.numero_cnj, tribunal: meu.tribunal, orgao_julgador: meu.orgao_julgador, classe: meu.classe, partes: [{ nome: meu.parte_contraria, polo: 'A' }, { nome: N, polo: 'P' }],
+      publicacoes: 2, primeira: menosDias(20), ultima: menosDias(6), ultimo_tipo: 'Despacho', ultimo_trecho: 'Intime-se a parte ré para manifestação.', link: null, polo_pesquisado: 'reu', processo_id: meu.id },
+  ] }
+}
+function menosDias(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('en-CA') }

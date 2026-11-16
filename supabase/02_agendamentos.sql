@@ -1,6 +1,6 @@
 -- =====================================================================
 -- ORBEO · AGENDAMENTOS (rodar no SQL Editor DEPOIS de publicar a função datajud-sync)
--- Consulta diária ao DataJud de madrugada, em lotes, respeitando o limite do CNJ.
+-- Consulta diária ao DataJud (madrugada) e ao DJEN (início da manhã), em lotes, respeitando os limites do CNJ.
 -- Pode rodar de novo sem problema: ele substitui o agendamento anterior.
 -- =====================================================================
 create extension if not exists pg_cron;
@@ -36,5 +36,26 @@ select cron.schedule(
   $job$
 );
 
--- Conferência: deve listar o agendamento
+-- DJEN: a cada 10 minutos entre 06:05 e 07:55 (Brasília) = 09:05–10:55 UTC.
+-- Busca as publicações pelo número de cada processo, 19 consultas por minuto (limite: 20).
+-- x-region = sa-east-1: a função roda em São Paulo, porque o DJEN só aceita conexões do Brasil.
+select cron.unschedule(jobid) from cron.job where jobname = 'orbeo-djen-diario';
+select cron.schedule(
+  'orbeo-djen-diario',
+  '5-55/10 9-10 * * *',
+  $job$
+  select net.http_post(
+    url := 'https://humbhyghezmhwdtwcztr.supabase.co/functions/v1/datajud-sync',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-region', 'sa-east-1',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'orbeo_cron')
+    ),
+    body := '{"acao":"rodada_djen"}'::jsonb,
+    timeout_milliseconds := 150000
+  );
+  $job$
+);
+
+-- Conferência: deve listar os dois agendamentos
 select jobname, schedule, active from cron.job where jobname like 'orbeo-%';

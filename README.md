@@ -77,6 +77,14 @@ Rode `supabase/migracoes/05_modelo_anterior.sql` (depois da 04). Ela:
 - impede data de elaboração depois do prazo fatal;
 - recalcula os prazos abertos com essas regras.
 
+## 1.8 DJEN (publicações pelo número do processo)
+
+Rode `supabase/migracoes/06_djen.sql` (depois da 05) e publique de novo a função `datajud-sync`
+(cole o `index.ts` novo por cima e clique em Deploy). O botão "Atualizar agora" passa a consultar
+o DataJud e o DJEN. A busca é só pelo número de cada processo cadastrado: nenhuma OAB fica fixa.
+A aba **Buscar processos** procura publicações pelo nome de uma parte (cliente ou não) para achar
+processos que ainda não estão no Orbeo; cada resultado tem o botão "Cadastrar processo".
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

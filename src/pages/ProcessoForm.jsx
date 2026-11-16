@@ -44,7 +44,13 @@ export default function ProcessoForm() {
   useEffect(() => { if (clientes) setListaClientes(clientes) }, [clientes])
   useEffect(() => {
     if (existente) setF({ ...VAZIO, ...existente, valor_causa: existente.valor_causa ? mascararMoeda(Math.round(existente.valor_causa * 100)) : '' })
-    else if (!editando && sp.get('cliente')) setF(v => ({ ...v, cliente_id: sp.get('cliente') }))
+    else if (!editando && (sp.get('cliente') || sp.get('numero'))) {
+      // Vindo da busca no DJEN: número, polo, parte contrária, vara e classe já preenchidos (confira antes de salvar)
+      setF(v => ({ ...v,
+        cliente_id: sp.get('cliente') || v.cliente_id, numero_cnj: sp.get('numero') || v.numero_cnj,
+        polo: sp.get('polo') || v.polo, parte_contraria: sp.get('parte') || v.parte_contraria,
+        orgao_julgador: sp.get('orgao') || v.orgao_julgador, classe: sp.get('classe') || v.classe }))
+    }
   }, [existente, editando, sp])
 
   const set = (k, v) => setF(x => ({ ...x, [k]: v }))

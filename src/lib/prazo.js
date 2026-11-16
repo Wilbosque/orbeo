@@ -133,3 +133,18 @@ export function calcularPrazo({ data, origem = 'intimacao', dias, contagem = 'ut
 }
 
 export const diaSemana = s => new Date(s + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+
+// Lê "no prazo de 15 (quinze) dias", "prazo de cinco dias", "em 48 horas" no texto da publicação.
+// Só SUGERE: o advogado confere e confirma.
+const EXTENSO = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10,
+  onze: 11, doze: 12, treze: 13, quatorze: 14, catorze: 14, quinze: 15, vinte: 20, trinta: 30, quarenta: 40, sessenta: 60, noventa: 90 }
+export function prazoNoTexto(texto) {
+  const t = (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const m = t.match(/prazo\s+(?:comum\s+|sucessivo\s+|legal\s+)?de\s+(\d{1,3}|[a-z]+)\s*(?:\([a-z\s]+\)\s*)?(dias?|horas?)(\s+uteis|\s+corridos)?/)
+    || t.match(/\b(?:em|no)\s+(\d{1,3}|[a-z]+)\s*(?:\([a-z\s]+\)\s*)?(dias?|horas?)(\s+uteis|\s+corridos)?/)
+  if (!m) return null
+  const n = /^\d+$/.test(m[1]) ? Number(m[1]) : EXTENSO[m[1]]
+  if (!n) return null
+  if (m[2].startsWith('hora')) return { horas: n, trecho: m[0] }
+  return { dias: n, contagem: m[3]?.includes('corridos') ? 'corridos' : 'uteis', trecho: m[0] }
+}

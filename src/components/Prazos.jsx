@@ -57,7 +57,7 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
   function escolherTipo(t) {
     const c = catalogo.find(x => x.tipo === t) || {}
     setZ(x => ({
-      ...x, tipo: t, dias: c.dias ?? '', audiencia_id: c.audiencia ? (auds.dados?.[0]?.id || '') : '',
+      ...x, tipo: t, dias: c.dias ?? (x.publicacao_id ? x.dias : ''), audiencia_id: c.audiencia ? (auds.dados?.[0]?.id || '') : '',
       origem_contagem: c.origem || (x.origem_contagem === 'ato' ? 'intimacao' : x.origem_contagem),
       contagem: c.contagem || 'uteis', calculo_auto: c.audiencia ? false : true,
     }))
@@ -103,6 +103,11 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
             {procs.filter(p => p.situacao === 'ativo').map(p => <option key={p.id} value={p.id}>{p.cliente_nome} × {p.parte_contraria || '—'} · {p.numero_cnj}</option>)}
           </select>
         </Campo>
+      )}
+      {z.publicacao_id && (
+        <div className="aviso info"><Icone nome="info" />
+          <div>Prazo da publicação disponibilizada no DJEN em {fmt(z.data_recebimento)}.{inicial?.trecho ? <> No texto: “{inicial.trecho}”.</> : ' O texto não indica a quantidade de dias: confira e informe.'}</div>
+        </div>
       )}
       {proc && <div className="regra-rito"><b>{RITOS[rito]}</b> · {INSTANCIAS[proc.instancia || '1g']} · {REGRA_RITO[rito]}</div>}
 

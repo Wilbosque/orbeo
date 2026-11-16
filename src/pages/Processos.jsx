@@ -55,7 +55,8 @@ export default function Processos() {
 
   return (
     <>
-      <Topo titulo="Processos" sub={r.dados ? `${filtrados.length} de ${lista.length}` : ' '} />
+      <Topo titulo="Processos" sub={r.dados ? `${filtrados.length} de ${lista.length}` : ' '}
+        acoes={<Link to="/pesquisa" className="btn pequeno" title="Buscar processos novos no DJEN"><Icone nome="radar" />Buscar novos</Link>} />
       <div className="busca">
         <Icone nome="busca" />
         <input type="search" placeholder="Número, cliente, parte contrária, vara…" value={q} onChange={e => set('q', e.target.value)} aria-label="Buscar processos" />

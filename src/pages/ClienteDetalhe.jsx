@@ -45,11 +45,12 @@ export default function ClienteDetalhe() {
         </dl>
       </div>
 
-      <div className="secao"><h2>Monitoramento no DJEN</h2></div>
-      {termos.length ? (
-        <div className="cartao"><div className="termos">{termos.map(t => <span key={t.id} className="termo" style={{ paddingRight: 12 }}>{t.valor}</span>)}</div>
-          <small className="muted" style={{ display: 'block', marginTop: 8 }}>Publicações com esses nomes chegam para você, inclusive de processos ainda não cadastrados.</small></div>
-      ) : <div className="cartao muted">Não monitorado. <Link className="link-btn" to={`/clientes/${id}/editar`}>Ativar</Link></div>}
+      <div className="secao"><h2>Processos novos no DJEN</h2><Link className="btn pequeno primario" to={`/pesquisa?cliente=${id}`}><Icone nome="radar" />Buscar</Link></div>
+      <div className="cartao">
+        {termos.length ? <div className="termos">{termos.map(t => <span key={t.id} className="termo" style={{ paddingRight: 12 }}>{t.valor}</span>)}</div>
+          : <span className="muted">Nenhum nome de busca cadastrado: a busca usa a razão social.</span>}
+        <small className="muted" style={{ display: 'block', marginTop: 8 }}>Busca publicações com o nome do cliente para encontrar processos que ainda não estão no Orbeo. <Link className="link-btn" style={{ padding: 0 }} to={`/clientes/${id}/editar`}>Editar nomes de busca</Link></small>
+      </div>
 
       <div className="secao"><h2>Processos ({processos.length})</h2></div>
       {processos.length === 0 ? <Vazio titulo="Sem processos" texto="Nenhum processo deste cliente está na sua lista." /> :

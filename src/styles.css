@@ -381,3 +381,13 @@ button.cartao.aud.encerrada { border-left-color: var(--faint); opacity: .85; }
 .selo-inst { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 6px; margin-left: 6px; }
 .selo-inst.g1 { background: #e2eaf6; color: #24508f; }
 .selo-inst.g2 { background: #f9e1de; color: #a8261b; }
+
+/* Publicações do DJEN na linha do tempo */
+.pub-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 6px; }
+.pub-acoes .link-btn { padding: 4px 0; text-decoration: none; }
+.status-fontes { display: grid; gap: 2px; margin-top: 6px; }
+
+/* Buscar processos (DJEN) */
+.resultado-pesquisa .partes { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 2px; font-size: .88rem; }
+.resultado-pesquisa .partes b { display: inline-block; min-width: 46px; color: var(--muted); font-weight: 600; font-size: .78rem; }
+.resultado-pesquisa .trecho { margin-top: 6px; padding: 8px 10px; background: var(--bg, #f5f6fa); border-radius: 10px; font-size: .84rem; color: var(--muted); }

@@ -241,8 +241,8 @@ export async function salvarFonte(f) {
 }
 
 // ---------- Funções no servidor (Edge Functions) ----------
-async function invocar(nome, corpo) {
-  const { data, error } = await sb.functions.invoke(nome, { body: corpo })
+async function invocar(nome, corpo, opcoes = {}) {
+  const { data, error } = await sb.functions.invoke(nome, { body: corpo, ...opcoes })
   if (error) {
     let msg = error.message
     try { const c = await error.context.json(); if (c?.erro) msg = c.erro } catch { /* sem corpo */ }
@@ -263,7 +263,9 @@ export const adminRedefinirSenha = id => admin('redefinir_senha', { id })
 export const adminExcluir = id => admin('excluir', { id })
 
 // ---------- DataJud ----------
-export const atualizarDataJud = processoId => invocar('datajud-sync', { acao: 'processo', processo_id: processoId })
+// Região de São Paulo: o DJEN só aceita conexões vindas do Brasil
+export const pesquisarDJEN = filtro => invocar('datajud-sync', { acao: 'pesquisa', ...filtro }, { region: 'sa-east-1' })
+export const atualizarDataJud = processoId => invocar('datajud-sync', { acao: 'processo', processo_id: processoId }, { region: 'sa-east-1' })
 export async function marcarVistas(processoId) { return ok(await sb.rpc('marcar_movimentacoes_vistas', { p_processo: processoId })) }
 export async function saudeConsultas() {
   return ok(await sb.from('sincronizacoes').select('*').order('iniciada_em', { ascending: false }).limit(30))
@@ -319,6 +321,7 @@ export async function salvarPrazo(z) {
     data_cumprimento: z.status === 'cumprido' ? z.data_cumprimento : null,
     audiencia_id: z.audiencia_id || null,
   }
+  if (!z.id && z.publicacao_id) campos.publicacao_id = z.publicacao_id
   return z.id
     ? ok(await sb.from('prazos').update(campos).eq('id', z.id).select().single())
     : ok(await sb.from('prazos').insert(campos).select().single())

@@ -7,7 +7,9 @@ import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../
 import { POLOS, SITUACOES, data, iniciais, moeda } from '../lib/formato.js'
 import { AudienciaForm, ItemAudiencia } from '../components/Audiencias.jsx'
 import { CumprirForm, ItemPrazoLista, PrazoForm } from '../components/Prazos.jsx'
-import { INSTANCIAS, RITOS } from '../lib/prazo.js'
+import { INSTANCIAS, RITOS, prazoNoTexto } from '../lib/prazo.js'
+
+const diasDesde = iso => Math.floor((Date.now() - new Date(iso)) / 86400000)
 
 function haQuanto(iso) {
   if (!iso) return null
@@ -20,7 +22,28 @@ function haQuanto(iso) {
   return d === 1 ? 'ontem' : `há ${d} dias`
 }
 
-function LinhaDoTempo({ processoId, aoVer }) {
+function Publicacao({ m, aoCriarPrazo }) {
+  const [aberta, setAberta] = useState(false)
+  const x = m.extra || {}
+  const texto = m.detalhe || ''
+  const longo = texto.length > 420
+  return (
+    <>
+      <div className="titulo">{m.titulo}{x.tipo_comunicacao && x.tipo_comunicacao !== m.titulo ? ` · ${x.tipo_comunicacao}` : ''}</div>
+      {x.orgao && <div className="detalhe" style={{ fontWeight: 500 }}>{x.orgao}</div>}
+      <div className="detalhe" style={{ whiteSpace: 'pre-wrap' }}>{aberta || !longo ? texto : `${texto.slice(0, 420).trim()}…`}</div>
+      <div className="pub-acoes">
+        {longo && <button className="link-btn" onClick={() => setAberta(v => !v)}>{aberta ? 'Recolher' : 'Ler inteiro teor'}</button>}
+        {x.link && <a className="link-btn" href={x.link} target="_blank" rel="noreferrer">Documento no tribunal</a>}
+        {x.status === 'prazo_criado'
+          ? <span className="selo">Prazo criado</span>
+          : <button className="btn pequeno primario" onClick={() => aoCriarPrazo(m)}><Icone nome="mais_add" />Criar prazo</button>}
+      </div>
+    </>
+  )
+}
+
+function LinhaDoTempo({ processoId, aoVer, aoCriarPrazo }) {
   const r = useCarregar(() => api.linhaDoTempo(processoId), [processoId])
   // Depois de mostrar, marca os andamentos como vistos (os "novos" continuam destacados nesta abertura)
   useEffect(() => {
@@ -30,7 +53,7 @@ function LinhaDoTempo({ processoId, aoVer }) {
   if (r.carregando) return <Carregando n={2} />
   if (!r.dados.length) return (
     <Vazio icone="relogio" titulo="Sem movimentações ainda"
-      texto="Nenhum andamento encontrado no DataJud até agora. Use “Atualizar agora” ou aguarde a consulta automática da madrugada. As publicações do DJEN entram na próxima etapa." />
+      texto="Nenhum andamento no DataJud nem publicação no DJEN até agora. Use “Atualizar agora” ou aguarde a consulta automática da madrugada." />
   )
   return (
     <ul className="tempo">
@@ -40,8 +63,12 @@ function LinhaDoTempo({ processoId, aoVer }) {
             {new Date(m.quando).toLocaleDateString('pt-BR')} · {m.origem === 'publicacao' ? 'Publicação DJEN' : 'Andamento DataJud'}
             {m.nova && <span className="selo novo" style={{ marginLeft: 6, height: 18 }}>nova</span>}
           </div>
-          <div className="titulo">{m.titulo}</div>
-          {m.detalhe && <div className="detalhe">{m.detalhe}</div>}
+          {m.origem === 'publicacao' ? <Publicacao m={m} aoCriarPrazo={aoCriarPrazo} /> : (
+            <>
+              <div className="titulo">{m.titulo}</div>
+              {m.detalhe && <div className="detalhe">{m.detalhe}</div>}
+            </>
+          )}
           {m.anotacoes?.map((a, i) => (
             <div key={i} className="anotacao"><b>{a.tipo === 'dispositivo' ? 'Dispositivo' : a.tipo === 'explicacao' ? 'Explicação' : 'Observação'}</b>{a.texto}</div>
           ))}
@@ -71,9 +98,15 @@ export default function ProcessoDetalhe() {
     setBuscando(true)
     try {
       const res = await api.atualizarDataJud(id)
-      if (res.aviso) { if (!auto || !/há pouco/.test(res.aviso)) toast(res.aviso) }
-      else if (res.importados) toast(`Histórico importado do DataJud: ${res.importados} andamento${res.importados > 1 ? 's' : ''}.`)
-      else toast(res.novos ? `${res.novos} andamento${res.novos > 1 ? 's' : ''} novo${res.novos > 1 ? 's' : ''}.` : 'Nenhum andamento novo no DataJud.')
+      const partes = []
+      if (res.importados) partes.push(`Histórico do DataJud: ${res.importados} andamento${res.importados > 1 ? 's' : ''}`)
+      else if (res.novos) partes.push(`${res.novos} andamento${res.novos > 1 ? 's' : ''} novo${res.novos > 1 ? 's' : ''}`)
+      if (res.publicacoes_novas) partes.push(`${res.publicacoes_novas} publicação${res.publicacoes_novas > 1 ? 'ões' : ''} nova${res.publicacoes_novas > 1 ? 's' : ''} no DJEN`)
+      if (res.aviso) { if (!auto || !/há pouco/.test(res.aviso)) partes.push(res.aviso) }
+      if (res.erro_datajud) partes.push(`DataJud: ${res.erro_datajud}`)
+      if (res.erro_djen) partes.push(`DJEN: ${res.erro_djen}`)
+      if (!partes.length && !auto) partes.push('Nada novo no DataJud nem no DJEN.')
+      if (partes.length) toast(partes.join(' · '), res.erro_datajud || res.erro_djen ? 'erro' : undefined)
       r.recarregar()
     } catch (e) { toast(e.message, 'erro') }
     finally { setBuscando(false) }
@@ -137,11 +170,17 @@ export default function ProcessoDetalhe() {
           <Icone nome="atualizar" className={buscando ? 'girando' : ''} />{buscando ? 'Consultando…' : 'Atualizar agora'}
         </button>
       </div>
-      <small className="muted" style={{ display: 'block', marginTop: 6 }}>
-        {buscando && !p.datajud_sync_em ? 'Buscando o histórico no DataJud…'
-          : p.datajud_sync_em ? `DataJud consultado ${haQuanto(p.datajud_sync_em)}. Os tribunais enviam os andamentos ao DataJud uma vez por dia.`
-          : 'Ainda não consultado no DataJud.'}
-      </small>
+      <div className="status-fontes">
+        {buscando && !p.datajud_sync_em ? <small className="muted">Buscando o histórico no DataJud e as publicações no DJEN…</small> : (
+          <>
+            <small className="muted"><b>DJEN</b> (publicações): {p.djen_sync_em ? `consultado ${haQuanto(p.djen_sync_em)}` : 'ainda não consultado'}.</small>
+            <small className="muted"><b>DataJud</b> (andamentos): {p.datajud_sync_em ? `consultado ${haQuanto(p.datajud_sync_em)}` : 'ainda não consultado'}
+              {p.datajud_atualizado_em && <>; o tribunal atualizou este processo no DataJud em <b>{data(p.datajud_atualizado_em.slice(0, 10))}</b>
+                {diasDesde(p.datajud_atualizado_em) > 7 && <span style={{ color: 'var(--warn)' }}> (base atrasada: andamentos depois dessa data ainda não chegaram ao DataJud)</span>}</>}.
+            </small>
+          </>
+        )}
+      </div>
 
       <div className="secao"><h2>Dados do processo</h2></div>
       <div className="cartao">
@@ -197,7 +236,7 @@ export default function ProcessoDetalhe() {
 
       <Folha titulo={formPrazo?.id ? 'Editar prazo' : 'Novo prazo'} aberta={Boolean(formPrazo)} fechar={() => setFormPrazo(null)}>
         {formPrazo && <PrazoForm key={formPrazo.id || 'novo'} inicial={formPrazo} processoFixo={id}
-          aoSalvar={async z => { const s = await api.salvarPrazo(z); toast(`Prazo salvo. Fatal: ${s.prazo_fatal.split('-').reverse().join('/')}.`); setFormPrazo(null); przs.recarregar() }}
+          aoSalvar={async z => { const s = await api.salvarPrazo(z); toast(`Prazo salvo. Fatal: ${s.prazo_fatal.split('-').reverse().join('/')}.`); setFormPrazo(null); przs.recarregar(); r.recarregar() }}
           aoExcluir={formPrazo.id ? async () => { if (!window.confirm('Excluir este prazo?')) return; await api.excluirPrazo(formPrazo.id); toast('Prazo excluído.'); setFormPrazo(null); przs.recarregar() } : null} />}
       </Folha>
       <Folha titulo="Prazo cumprido" aberta={Boolean(cumprir)} fechar={() => setCumprir(null)}>
@@ -205,7 +244,15 @@ export default function ProcessoDetalhe() {
       </Folha>
 
       <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>
-        <LinhaDoTempo processoId={id} aoVer={() => r.recarregar()} />
+        <LinhaDoTempo processoId={id} aoVer={() => r.recarregar()} aoCriarPrazo={m => {
+          const sug = prazoNoTexto(m.detalhe)
+          setVerMov(false)
+          setFormPrazo({
+            publicacao_id: m.item_id, data_recebimento: m.extra?.disponibilizacao, origem_contagem: 'disponibilizacao',
+            dias: sug?.dias ? String(sug.dias) : '', contagem: sug?.contagem || 'uteis', trecho: sug?.trecho,
+            observacoes: `Publicação DJEN de ${data(m.extra?.disponibilizacao)}: ${m.titulo}`,
+          })
+        }} />
       </Folha>
       <Folha titulo="Incluir advogado" aberta={folhaAdv} fechar={() => setFolhaAdv(false)}>
         <p className="muted" style={{ marginTop: 0 }}>A pessoa incluída passa a ver este processo e o cadastro do cliente.</p>

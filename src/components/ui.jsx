@@ -44,6 +44,7 @@ export function Navegacao({ perfil, aoSair }) {
   const itens = [
     ['/', 'inicio', 'Início'],
     ['/processos', 'processos', 'Processos'],
+    ['/pesquisa', 'busca', 'Buscar processos', true],
     ['/prazos', 'relogio', 'Prazos'],
     ['/audiencias', 'martelo', 'Audiências'],
     ['/clientes', 'clientes', 'Clientes', true],
