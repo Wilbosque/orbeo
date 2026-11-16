@@ -55,7 +55,7 @@ async function uid() {
 // ---------- Advogados ----------
 export async function meuPerfil() {
   const id = await uid()
-  return ok(await sb.from('advogados').select('*').eq('id', id).maybeSingle())
+  return ok(await sb.from('advogados').select('*, advogado_oabs(id,numero,uf,principal)').eq('id', id).maybeSingle())
 }
 export async function salvarPerfil({ nome, oab_numero, oab_uf }) {
   const id = await uid()
@@ -70,8 +70,17 @@ export async function salvarPerfil({ nome, oab_numero, oab_uf }) {
   return perfil
 }
 export async function listarAdvogados() {
-  return ok(await sb.from('advogados').select('id,nome,oab_numero,oab_uf').order('nome'))
+  return ok(await sb.from('advogados').select('id,nome,oab_numero,oab_uf,advogado_oabs(numero,uf,principal)').order('nome'))
 }
+// OABs (inscrição principal e suplementares). advogadoId vazio = o próprio usuário
+export async function listarOabs(advogadoId) {
+  let q = sb.from('advogado_oabs').select('id,advogado_id,numero,uf,principal').order('principal', { ascending: false }).order('uf')
+  if (advogadoId) q = q.eq('advogado_id', advogadoId)
+  return ok(await q)
+}
+export async function incluirOab(numero, uf, advogadoId = null) { return ok(await sb.rpc('incluir_oab', { p_numero: numero, p_uf: uf, p_advogado: advogadoId })) }
+export async function tornarOabPrincipal(id) { ok(await sb.rpc('tornar_oab_principal', { p_id: id })) }
+export async function removerOab(id) { ok(await sb.rpc('remover_oab', { p_id: id })) }
 
 // ---------- Clientes ----------
 export async function listarClientes() {

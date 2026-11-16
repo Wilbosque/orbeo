@@ -4,7 +4,8 @@ import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Campo, Folha, Topo, useToast } from '../components/ui.jsx'
-import { UFS, iniciais } from '../lib/formato.js'
+import { iniciais, oabsTexto } from '../lib/formato.js'
+import Oabs from '../components/Oabs.jsx'
 import { ativarPush, desativarPush, estadoPush } from '../lib/push.js'
 
 const AVISOS = [
@@ -71,7 +72,7 @@ export default function Ajustes() {
 
   async function salvarPerfil(e) {
     e.preventDefault(); setSalvando(true)
-    try { setPerfil(await api.salvarPerfil({ nome: f.nome.trim(), oab_numero: f.oab_numero.replace(/\D/g, ''), oab_uf: f.oab_uf })); setEditar(false); toast('Cadastro atualizado.') }
+    try { await api.salvarPerfil({ nome: f.nome.trim(), oab_numero: perfil.oab_numero, oab_uf: perfil.oab_uf }); setPerfil(await api.meuPerfil()); setEditar(false); toast('Cadastro atualizado.') }
     catch (err) { toast(err.message, 'erro') } finally { setSalvando(false) }
   }
   async function salvarSenha(e) {
@@ -89,7 +90,7 @@ export default function Ajustes() {
         <span className="avatar" style={{ width: 52, height: 52, fontSize: '1.05rem', background: 'var(--violeta)', color: '#fff' }}>{iniciais(perfil.nome)}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h3 style={{ margin: 0 }}>{perfil.nome}</h3>
-          <div className="linha">OAB {perfil.oab_numero}/{perfil.oab_uf}</div>
+          <div className="linha" style={{ whiteSpace: 'normal' }}>{oabsTexto(perfil)}</div>
           <div className="linha">{email}</div>
         </div>
       </div>
@@ -126,13 +127,10 @@ export default function Ajustes() {
       <Folha titulo="Meus dados" aberta={editar} fechar={() => setEditar(false)}>
         <form className="form" onSubmit={salvarPerfil}>
           <Campo rotulo="Nome completo" obrigatorio><input className="entrada" value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} required /></Campo>
-          <div className="duas">
-            <Campo rotulo="Nº da OAB" obrigatorio><input className="entrada mono" inputMode="numeric" value={f.oab_numero} onChange={e => setF({ ...f, oab_numero: e.target.value })} required /></Campo>
-            <Campo rotulo="UF"><select className="entrada" value={f.oab_uf} onChange={e => setF({ ...f, oab_uf: e.target.value })}>{UFS.map(u => <option key={u}>{u}</option>)}</select></Campo>
-          </div>
-          <small className="muted">A OAB aparece no seu cadastro e para os colegas do escritório.</small>
-          <button className="btn primario bloco" disabled={salvando}>Salvar</button>
+          <button className="btn primario bloco" disabled={salvando}>Salvar nome</button>
         </form>
+        <div className="secao" style={{ marginTop: 20 }}><h2>Minhas OABs</h2></div>
+        <Oabs advogadoId={perfil.id} aoMudar={async () => setPerfil(await api.meuPerfil())} />
       </Folha>
       <Folha titulo="Trocar senha" aberta={senha} fechar={() => setSenha(false)}>
         <form className="form" onSubmit={salvarSenha}>

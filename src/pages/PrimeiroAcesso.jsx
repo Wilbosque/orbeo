@@ -35,6 +35,7 @@ export default function PrimeiroAcesso({ aoSalvar }) {
             <select className="entrada" value={f.oab_uf} onChange={set('oab_uf')}>{UFS.map(u => <option key={u}>{u}</option>)}</select>
           </Campo>
         </div>
+        <small className="muted">Tem inscrição em outra seccional? Depois de entrar, inclua em Ajustes → Meus dados e OAB.</small>
         <button className="btn primario bloco" disabled={salvando}>{salvando ? 'Salvando…' : 'Continuar'}</button>
       </form>
     </TelaCentral>

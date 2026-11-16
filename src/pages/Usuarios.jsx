@@ -4,6 +4,7 @@ import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Campo, Carregando, Erro, Folha, Topo, useCarregar, useToast } from '../components/ui.jsx'
 import { UFS, iniciais } from '../lib/formato.js'
+import Oabs from '../components/Oabs.jsx'
 
 function quando(iso) {
   if (!iso) return 'Nunca entrou'
@@ -58,6 +59,8 @@ export default function Usuarios() {
   const { perfil } = usePerfil()
   const toast = useToast()
   const r = useCarregar(() => api.adminListar(), [])
+  const oabs = useCarregar(() => api.listarOabs(), [])
+  const oabsDe = id => (oabs.dados || []).filter(o => o.advogado_id === id).sort((a, b) => Number(b.principal) - Number(a.principal))
   const [novo, setNovo] = useState(false)
   const [senha, setSenha] = useState(null)       // {senha, email}
   const [sel, setSel] = useState(null)
@@ -88,7 +91,8 @@ export default function Usuarios() {
                 <h3 style={{ margin: 0 }}>{u.nome || u.email}{u.id === perfil.id && <span className="muted" style={{ fontWeight: 400 }}> (você)</span>}</h3>
                 <div className="linha">{u.email}</div>
                 <div className="cartao-rodape" style={{ marginTop: 6 }}>
-                  {u.oab_numero && <span className="selo">OAB {u.oab_numero}/{u.oab_uf}</span>}
+                  {oabsDe(u.id).length ? oabsDe(u.id).map(o => <span key={o.id} className="selo">OAB {o.numero}/{o.uf}</span>)
+                    : u.oab_numero && <span className="selo">OAB {u.oab_numero}/{u.oab_uf}</span>}
                   {u.admin && <span className="selo violeta">Admin</span>}
                   {!u.ativo && <span className="selo perigo">Desativado</span>}
                   {u.trocar_senha && u.ativo && <span className="selo alerta">Senha provisória</span>}
@@ -110,7 +114,13 @@ export default function Usuarios() {
       <Folha titulo={sel?.nome || sel?.email || ''} aberta={Boolean(sel)} fechar={() => setSel(null)}>
         {sel && (
           <div className="form">
-            <div className="muted" style={{ marginTop: -8 }}>{sel.email}{sel.oab_numero ? ` · OAB ${sel.oab_numero}/${sel.oab_uf}` : ''}</div>
+            <div className="muted" style={{ marginTop: -8 }}>{sel.email}</div>
+            {!sel.sem_perfil && (
+              <>
+                <b style={{ fontSize: '.92rem' }}>OABs</b>
+                <Oabs advogadoId={sel.id} aoMudar={() => { oabs.recarregar(); r.recarregar() }} />
+              </>
+            )}
             {sel.id === perfil.id ? (
               <div className="aviso info"><Icone nome="info" />Este é o seu usuário. Para trocar sua senha, use Ajustes → Trocar senha.</div>
             ) : (

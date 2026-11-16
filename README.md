@@ -93,6 +93,11 @@ Cada advogado ativa em **Ajustes → Notificações**, em cada aparelho. No iPho
 Orbeo salvo na Tela de Início pelo Safari e aberto pelo ícone. Os avisos automáticos dependem do
 `02_agendamentos.sql` (agendamento `orbeo-avisos`, a cada 15 minutos das 6h às 22h45).
 
+## 1.10 Mais de uma OAB por advogado
+
+Rode `supabase/migracoes/08_varias_oabs.sql` (depois da 07). Cada advogado inclui as inscrições
+suplementares em Ajustes → Meus dados e OAB; o administrador também pode incluir pela tela Usuários.
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

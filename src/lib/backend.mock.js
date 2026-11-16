@@ -103,7 +103,30 @@ export async function sair() { db.sessao = null; gravar(); ouvintes.forEach(f =>
 export async function recuperarSenha() { await atraso() }
 export async function trocarSenha() { await atraso(); const a = db.advogados.find(a => a.id === me()); if (a) a.trocar_senha = false; gravar() }
 
-export async function meuPerfil() { await atraso(); const a = db.advogados.find(a => a.id === me()); return a ? { ...a } : null }
+const oabsDe = id => (db.oabs || []).filter(o => o.advogado_id === id).sort((a, b) => Number(b.principal) - Number(a.principal) || a.uf.localeCompare(b.uf))
+function semearOabs() {
+  db.oabs = db.advogados.map(a => ({ id: 'o-' + a.id, advogado_id: a.id, numero: a.oab_numero, uf: a.oab_uf, principal: true }))
+  db.oabs.push({ id: 'o-se', advogado_id: EU, numero: '12345', uf: 'SE', principal: false })
+}
+export async function meuPerfil() { await atraso(); if (!db.oabs) { semearOabs(); gravar() } const a = db.advogados.find(a => a.id === me()); return a ? { ...a, advogado_oabs: oabsDe(a.id) } : null }
+export async function listarOabs(id) { await atraso(); return id ? oabsDe(id) : db.oabs || [] }
+export async function incluirOab(numero, uf, adv) {
+  await atraso(200); const id = adv || me(); const n = String(numero).replace(/\D/g, ''); uf = uf.toUpperCase()
+  if (!n) throw new Error('Número de OAB inválido.')
+  if (db.oabs.some(o => o.numero === n && o.uf === uf)) throw new Error(`A OAB ${n}/${uf} já está cadastrada.`)
+  if (db.oabs.some(o => o.advogado_id === id && o.uf === uf)) throw new Error(`Já existe uma OAB de ${uf} neste cadastro.`)
+  const o = { id: novoId(), advogado_id: id, numero: n, uf, principal: false }; db.oabs.push(o); gravar(); return o
+}
+export async function tornarOabPrincipal(oid) {
+  await atraso(200); const o = db.oabs.find(x => x.id === oid)
+  db.oabs.forEach(x => { if (x.advogado_id === o.advogado_id) x.principal = x.id === oid })
+  const a = db.advogados.find(x => x.id === o.advogado_id); a.oab_numero = o.numero; a.oab_uf = o.uf; gravar()
+}
+export async function removerOab(oid) {
+  await atraso(200); const o = db.oabs.find(x => x.id === oid)
+  if (o.principal) throw new Error('Esta é a OAB principal. Torne outra OAB principal antes de remover esta.')
+  db.oabs = db.oabs.filter(x => x.id !== oid); gravar()
+}
 export async function salvarPerfil(p) {
   await atraso()
   const i = db.advogados.findIndex(a => a.id === me())
@@ -111,7 +134,7 @@ export async function salvarPerfil(p) {
   if (i >= 0) db.advogados[i] = novo; else db.advogados.push(novo)
   gravar(); return novo
 }
-export async function listarAdvogados() { await atraso(); return [...db.advogados].sort((a, b) => a.nome.localeCompare(b.nome)) }
+export async function listarAdvogados() { await atraso(); return [...db.advogados].map(a => ({ ...a, advogado_oabs: oabsDe(a.id) })).sort((a, b) => a.nome.localeCompare(b.nome)) }
 
 export async function listarClientes() {
   await atraso(); return db.clientes.filter(c => podeVerCliente(c.id)).map(vwCliente).sort((a, b) => a.nome.localeCompare(b.nome))
@@ -297,6 +320,7 @@ export async function adminCriar(d) {
   await atraso(300)
   if (db.advogados.some(a => a.email === d.email)) throw new Error('Já existe um usuário com este e-mail.')
   const id = novoId(); const senha = senhaDemo()
+  db.oabs?.push({ id: 'o-' + id, advogado_id: id, numero: d.oab_numero, uf: d.oab_uf, principal: true })
   db.advogados.push({ id, nome: d.nome, email: d.email, oab_numero: d.oab_numero, oab_uf: d.oab_uf, admin: Boolean(d.admin), ativo: true, trocar_senha: true, ultimo_acesso: null })
   gravar(); return { id, senha_temporaria: senha }
 }

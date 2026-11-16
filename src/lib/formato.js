@@ -43,3 +43,15 @@ export function mascararTelefone(v) {
   if (d.length <= 10) return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2')
   return d.replace(/^(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2')
 }
+
+/** Todas as OABs do advogado, a principal primeiro: "OAB 12345/BA · 6789/SE" */
+export function oabsTexto(a) {
+  const lista = [...(a?.advogado_oabs || [])].sort((x, y) => Number(y.principal) - Number(x.principal))
+  if (!lista.length) return a?.oab_numero ? `OAB ${a.oab_numero}/${a.oab_uf}` : ''
+  return 'OAB ' + lista.map(o => `${o.numero}/${o.uf}`).join(' · ')
+}
+/** Só a principal, com "+N" quando houver outras (para espaços curtos) */
+export function oabCurta(a) {
+  const n = (a?.advogado_oabs || []).length
+  return a?.oab_numero ? `OAB ${a.oab_numero}/${a.oab_uf}${n > 1 ? ` +${n - 1}` : ''}` : ''
+}

@@ -4,7 +4,7 @@ import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Carregando, Erro, Folha, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
-import { POLOS, SITUACOES, data, iniciais, moeda } from '../lib/formato.js'
+import { POLOS, SITUACOES, data, iniciais, moeda, oabsTexto } from '../lib/formato.js'
 import { AudienciaForm, ItemAudiencia } from '../components/Audiencias.jsx'
 import { CumprirForm, ItemPrazoLista, PrazoForm } from '../components/Prazos.jsx'
 import { INSTANCIAS, RITOS, prazoNoTexto } from '../lib/prazo.js'
@@ -260,7 +260,7 @@ export default function ProcessoDetalhe() {
           {foraDoProcesso.map(a => (
             <button key={a.id} className="cartao" onClick={() => incluir(a)} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <span className="avatar" style={{ width: 36, height: 36 }}>{iniciais(a.nome)}</span>
-              <div style={{ flex: 1 }}><b>{a.nome}</b><div className="linha">OAB {a.oab_numero}/{a.oab_uf}</div></div>
+              <div style={{ flex: 1 }}><b>{a.nome}</b><div className="linha">{oabsTexto(a)}</div></div>
               <Icone nome="mais_add" width="20" height="20" />
             </button>
           ))}

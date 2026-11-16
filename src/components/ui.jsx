@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import Icone from './Icone.jsx'
-import { iniciais } from '../lib/formato.js'
+import { iniciais, oabCurta, oabsTexto } from '../lib/formato.js'
 import Logo from './Logo.jsx'
 
 // ---------- Avisos rápidos (toast) ----------
@@ -63,7 +63,7 @@ export function Navegacao({ perfil, aoSair }) {
       {perfil && (
         <div className="menu-usuario">
           <span className="avatar">{iniciais(perfil.nome)}</span>
-          <div className="quem"><b title={perfil.nome}>{perfil.nome}</b><span>OAB {perfil.oab_numero}/{perfil.oab_uf}{perfil.admin ? ' · Admin' : ''}</span></div>
+          <div className="quem"><b title={perfil.nome}>{perfil.nome}</b><span title={oabsTexto(perfil)}>{oabCurta(perfil)}{perfil.admin ? ' · Admin' : ''}</span></div>
           <button onClick={aoSair} aria-label="Sair do sistema" title="Sair"><Icone nome="sair" /></button>
         </div>
       )}

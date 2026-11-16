@@ -5,7 +5,7 @@ import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
 import { Campo, Carregando, Erro, Folha, Segmentado, Topo, useCarregar, useToast } from '../components/ui.jsx'
 import { formatarCNJ, soDigitos, tipoAcaoSugerido, tribunalDoCNJ, validarCNJ } from '../lib/cnj.js'
-import { SITUACOES, TIPOS_ACAO, lerMoeda, mascararMoeda } from '../lib/formato.js'
+import { SITUACOES, TIPOS_ACAO, lerMoeda, mascararMoeda, oabsTexto } from '../lib/formato.js'
 import { ClienteRapido } from './ClienteForm.jsx'
 import { AUD_VAZIA, CamposAudiencia, validarAudiencia } from '../components/Audiencias.jsx'
 import { montarISO } from '../lib/audiencia.js'
@@ -183,7 +183,7 @@ export default function ProcessoForm() {
                 <label key={a.id} className="caixa-check">
                   <input type="checkbox" checked={colegas.includes(a.id)}
                     onChange={e => setColegas(c => e.target.checked ? [...c, a.id] : c.filter(x => x !== a.id))} />
-                  <div><b>Incluir {a.nome}</b><span>OAB {a.oab_numero}/{a.oab_uf} passa a ver este processo e o cliente</span></div>
+                  <div><b>Incluir {a.nome}</b><span>{oabsTexto(a)} · passa a ver este processo e o cliente</span></div>
                 </label>
               ))}
             </div>
