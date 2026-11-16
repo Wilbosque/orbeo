@@ -58,7 +58,7 @@ export function Navegacao({ perfil, aoSair }) {
   return (
     <nav className="tabbar" aria-label="Navegação principal">
       <div className="marca"><Logo variante="escuro" /></div>
-      {perfil?.espacos?.length > 1 && <div className="so-desktop-bloco"><SeletorEspaco perfil={perfil} escuro /></div>}
+      {(perfil?.espacos?.length > 1 || perfil?.observador) && <div className="so-desktop-bloco"><SeletorEspaco perfil={perfil} escuro /></div>}
       {itens.map(([to, ic, rot, soDesktop]) => (
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `${isActive ? 'ativo' : ''} ${soDesktop ? 'so-desktop' : ''}`}>
           <Icone nome={ic} />{rot}
@@ -175,8 +175,8 @@ export function Avatares({ advogados = [] }) {
 export function SeletorEspaco({ perfil, escuro }) {
   const [trocando, setTrocando] = useState(false)
   const lista = perfil?.espacos || []
-  if (lista.length < 2) return null
-  const atual = lista.find(e => e.em_uso)?.id || ''
+  if (lista.length < 2 && !perfil?.observador) return null
+  const atual = perfil?.observador ? '_leitura' : lista.find(e => e.em_uso)?.id || ''
   async function trocar(id) {
     setTrocando(true)
     try { await api.trocarEspaco(id); window.location.hash = '#/'; window.location.reload() } catch (e) { alert(e.message); setTrocando(false) }
@@ -185,6 +185,7 @@ export function SeletorEspaco({ perfil, escuro }) {
     <label className={`seletor-espaco ${escuro ? 'escuro' : ''}`}>
       <span>Espaço em uso</span>
       <select value={atual} disabled={trocando} onChange={e => trocar(e.target.value)} aria-label="Trocar de escritório">
+        {perfil?.observador && <option value="_leitura" disabled>Modo leitura · {perfil.atual?.nome}</option>}
         {lista.map(e => <option key={e.id} value={e.id}>{e.tipo === 'autonomo' ? 'Meus processos autônomos' : e.nome}</option>)}
       </select>
     </label>

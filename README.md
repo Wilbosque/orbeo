@@ -119,6 +119,12 @@ O mesmo login pode estar em vários escritórios e ter um espaço autônomo; a t
 (menu lateral no computador; Ajustes no celular). Remover do escritório (sócio) e remanejar (dono) pedem
 um sucessor para os processos exclusivos e permitem autorizar cópias para o espaço autônomo.
 
+## 1.14 Dono: modo leitura e advogados autônomos
+
+Rode `supabase/migracoes/12_dono_leitura.sql` (depois da 11) e publique de novo a função `admin-usuarios`.
+Em Usuários → Autônomos, o dono vê os advogados sem escritório (ver processos em modo leitura, desativar, excluir do sistema).
+Em Escritórios, "Ver processos" abre o escritório em modo leitura.
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

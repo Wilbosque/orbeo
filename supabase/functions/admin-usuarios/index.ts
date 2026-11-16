@@ -4,6 +4,7 @@
 //   listar · criar · papel · visao · desativar/reativar · redefinir_senha · previa_saida · remover
 // Dono da plataforma (tabela plataforma_donos): escritórios e advogados entre escritórios
 //   escritorio_criar · escritorio_ativar · autonomo_criar · membros_listar · incluir · previa_saida · remanejar
+//   plataforma_listar · plataforma_ativar · plataforma_excluir (advogados autônomos)
 //
 // A chave de serviço fica só no servidor do Supabase (SUPABASE_SERVICE_ROLE_KEY).
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -87,7 +88,7 @@ Deno.serve(async (req) => {
 
   try {
     // ================= Dono da plataforma =================
-    if (['escritorio_criar', 'escritorio_ativar', 'autonomo_criar', 'membros_listar', 'incluir', 'remanejar'].includes(acao)
+    if (['escritorio_criar', 'escritorio_ativar', 'autonomo_criar', 'membros_listar', 'incluir', 'remanejar', 'plataforma_listar', 'plataforma_ativar', 'plataforma_excluir'].includes(acao)
         || (acao === 'previa_saida' && corpo.escritorio_id && corpo.escritorio_id !== meuEsc)) {
       if (!dono) return falha('Apenas o dono da plataforma pode fazer isso.', 403)
 
@@ -138,6 +139,52 @@ Deno.serve(async (req) => {
         if (!adv) return falha('Não há advogado com este e-mail no Orbeo. Crie o usuário pelo escritório.')
         const { error } = await servico.from('escritorio_membros').upsert({ advogado_id: adv.id, escritorio_id: esc, papel, visao_geral: Boolean(corpo.visao_geral), ativo: true })
         if (error) throw error
+        return resposta({ ok: true })
+      }
+
+      // Todos os advogados da plataforma, com os espaços de cada um
+      if (acao === 'plataforma_listar') {
+        const { data: lista, error } = await servico.auth.admin.listUsers({ perPage: 1000 })
+        if (error) throw error
+        const { data: advs } = await servico.from('advogados').select('id, nome, email, oab_numero, oab_uf, ativo')
+        const { data: membros } = await servico.from('escritorio_membros').select('advogado_id, papel, ativo, escritorios(id, nome, tipo, ativo)')
+        const { data: contagem } = await servico.from('processos').select('escritorio_id')
+        const procs = new Map<string, number>()
+        for (const p of contagem || []) procs.set(p.escritorio_id, (procs.get(p.escritorio_id) || 0) + 1)
+        const usuarios = (advs || []).map((a: any) => {
+          const u = lista.users.find(x => x.id === a.id)
+          const espacos = (membros || []).filter((m: any) => m.advogado_id === a.id).map((m: any) => ({
+            id: m.escritorios.id, nome: m.escritorios.nome, tipo: m.escritorios.tipo, papel: m.papel, ativo: m.ativo && m.escritorios.ativo,
+            processos: procs.get(m.escritorios.id) || 0 }))
+          return { ...a, ultimo_acesso: u?.last_sign_in_at || null, espacos, autonomo: !espacos.some((e: any) => e.tipo === 'escritorio') }
+        }).sort((x: any, y: any) => (x.nome || '').localeCompare(y.nome || ''))
+        return resposta({ usuarios })
+      }
+
+      if (acao === 'plataforma_ativar') {
+        const alvo = String(corpo.id || '')
+        if (alvo === user.id) return falha('Você não pode desativar o seu próprio acesso.')
+        const ativo = Boolean(corpo.ativo)
+        const { error } = await servico.auth.admin.updateUserById(alvo, { ban_duration: ativo ? 'none' : '876000h' })
+        if (error) throw error
+        await servico.from('advogados').update({ ativo }).eq('id', alvo)
+        return resposta({ ok: true })
+      }
+
+      // Exclui do sistema um advogado sem escritório: o login e o espaço autônomo (com os processos dele)
+      if (acao === 'plataforma_excluir') {
+        const alvo = String(corpo.id || '')
+        if (alvo === user.id) return falha('Você não pode excluir o seu próprio usuário.')
+        const { data: vincs } = await servico.from('escritorio_membros').select('escritorios(id, tipo)').eq('advogado_id', alvo)
+        if ((vincs || []).some((v: any) => v.escritorios?.tipo === 'escritorio')) {
+          return falha('Este advogado ainda está em um escritório. Remova-o do escritório antes de excluir o login.')
+        }
+        const autonomos = (vincs || []).map((v: any) => v.escritorios?.id).filter(Boolean)
+        const { data: titular } = await servico.from('escritorios').select('id').eq('titular_id', alvo)
+        for (const t of titular || []) if (!autonomos.includes(t.id)) autonomos.push(t.id)
+        const { error } = await servico.auth.admin.deleteUser(alvo)
+        if (error) throw error
+        for (const id of autonomos) await rpc('apagar_espaco', { p_escritorio: id })
         return resposta({ ok: true })
       }
 

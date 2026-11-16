@@ -2,7 +2,7 @@ import { useState } from 'react'
 import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
-import { Campo, Carregando, Erro, Folha, Topo, useCarregar, useToast } from '../components/ui.jsx'
+import { Campo, Carregando, Erro, Folha, Segmentado, Topo, Vazio, useCarregar, useToast } from '../components/ui.jsx'
 import { UFS, iniciais } from '../lib/formato.js'
 import Oabs from '../components/Oabs.jsx'
 import Saida from '../components/Saida.jsx'
@@ -75,7 +75,77 @@ function NovoUsuario({ aoCriar }) {
   )
 }
 
+// Advogados sem escritório (só o dono da plataforma vê esta aba)
+function Autonomos() {
+  const toast = useToast()
+  const r = useCarregar(() => api.plataformaListar(), [])
+  const [sel, setSel] = useState(null)
+  const [ocupado, setOcupado] = useState(false)
+  const lista = (r.dados || []).filter(u => u.autonomo)
+  async function agir(fn, msg) {
+    setOcupado(true)
+    try { await fn(); toast(msg); setSel(null); r.recarregar() } catch (e) { toast(e.message, 'erro') } finally { setOcupado(false) }
+  }
+  async function ver(u) {
+    const esp = u.espacos.find(e => e.tipo === 'autonomo')
+    if (!esp) return toast('Este advogado não tem espaço autônomo.', 'erro')
+    try { await api.trocarEspaco(esp.id); window.location.hash = '#/processos'; window.location.reload() } catch (e) { toast(e.message, 'erro') }
+  }
+  if (r.erro) return <Erro erro={r.erro} tentar={r.recarregar} />
+  if (r.carregando && !r.dados) return <Carregando n={2} />
+  return (
+    <>
+      <div className="aviso info" style={{ marginBottom: 12 }}><Icone nome="info" />
+        <div>Advogados que usam o Orbeo sem escritório (por exemplo, os removidos de um escritório e mantidos como autônomos). Você pode ver os processos deles em modo leitura, desativar ou excluir do sistema.</div>
+      </div>
+      {lista.length ? (
+        <div className="lista grade">
+          {lista.map(u => {
+            const esp = u.espacos.find(e => e.tipo === 'autonomo')
+            return (
+              <button key={u.id} className="cartao usuario" onClick={() => setSel(u)} style={{ opacity: u.ativo ? 1 : .6 }}>
+                <span className="avatar grande">{iniciais(u.nome || u.email)}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0 }}>{u.nome}</h3>
+                  <div className="linha">{u.email}</div>
+                  <div className="cartao-rodape" style={{ marginTop: 6 }}>
+                    <span className="selo">Autônomo</span>
+                    {u.oab_numero && <span className="selo">OAB {u.oab_numero}/{u.oab_uf}</span>}
+                    <span className="selo">{esp?.processos || 0} processo{esp?.processos === 1 ? '' : 's'}</span>
+                    {!u.ativo && <span className="selo perigo">Desativado</span>}
+                  </div>
+                  <div className="linha faint" style={{ marginTop: 4, fontSize: '.78rem' }}>{quando(u.ultimo_acesso)}</div>
+                </div>
+                <Icone nome="seta" width="18" height="18" />
+              </button>
+            )
+          })}
+        </div>
+      ) : <Vazio icone="usuario" titulo="Nenhum advogado autônomo" texto="Quem for removido de um escritório e mantido como autônomo aparece aqui." />}
+      <Folha titulo={sel?.nome || ''} aberta={Boolean(sel)} fechar={() => setSel(null)}>
+        {sel && (
+          <div className="form">
+            <div className="muted" style={{ marginTop: -8 }}>{sel.email}{sel.oab_numero ? ` · OAB ${sel.oab_numero}/${sel.oab_uf}` : ''}</div>
+            <button className="btn primario bloco" onClick={() => ver(sel)}><Icone nome="processos" />Ver processos (modo leitura)</button>
+            <button className="btn bloco" disabled={ocupado} onClick={() => {
+              if (sel.ativo && !window.confirm(`Desativar ${sel.nome}? Ele não conseguirá entrar, mas nada é apagado.`)) return
+              agir(() => api.plataformaAtivar(sel.id, !sel.ativo), sel.ativo ? 'Acesso desativado.' : 'Acesso reativado.')
+            }}><Icone nome={sel.ativo ? 'sair' : 'certo'} />{sel.ativo ? 'Desativar acesso' : 'Reativar acesso'}</button>
+            <button className="btn perigo bloco" disabled={ocupado} onClick={() => {
+              const n = sel.espacos.find(e => e.tipo === 'autonomo')?.processos || 0
+              if (!window.confirm(`Excluir ${sel.nome} do sistema? O login e o espaço autônomo serão apagados${n ? `, com ${n} processo(s), clientes, prazos e audiências` : ''}. Essa ação não pode ser desfeita.`)) return
+              agir(() => api.plataformaExcluir(sel.id), 'Advogado excluído do sistema.')
+            }}><Icone nome="lixo" />Excluir do sistema</button>
+            <small className="muted">Excluir apaga o login e todos os dados do espaço autônomo dele. Se quiser preservar os processos, prefira desativar.</small>
+          </div>
+        )}
+      </Folha>
+    </>
+  )
+}
+
 export default function Usuarios() {
+  const [aba, setAba] = useState('escritorio')
   const { perfil } = usePerfil()
   const toast = useToast()
   const r = useCarregar(() => api.adminListar(), [])
@@ -97,7 +167,9 @@ export default function Usuarios() {
 
   return (
     <>
-      <Topo titulo="Usuários" sub={r.dados ? `${ativos} ativo${ativos === 1 ? '' : 's'} · ${lista.length} no total` : ' '} />
+      <Topo titulo="Usuários" sub={aba === 'autonomos' ? 'Advogados sem escritório' : r.dados ? `${ativos} ativo${ativos === 1 ? '' : 's'} · ${lista.length} no total` : ' '} />
+      {perfil.dono && <div style={{ marginBottom: 12 }}><Segmentado rotulo="Ver" valor={aba} onChange={setAba} opcoes={[['escritorio', 'Deste escritório'], ['autonomos', 'Autônomos']]} /></div>}
+      {aba === 'autonomos' ? <Autonomos /> : <>
       <div className="aviso info" style={{ marginBottom: 12 }}>
         <Icone nome="info" />
         <div>Cada advogado vê só os processos em que está incluído. Quem tem <b>visão geral</b> vê todos os processos do escritório. Você decide isso em cada usuário, inclusive no seu.</div>
@@ -180,6 +252,7 @@ export default function Usuarios() {
             setSaida(null); setSel(null); r.recarregar()
           }} />}
       </Folha>
+    </>}
     </>
   )
 }

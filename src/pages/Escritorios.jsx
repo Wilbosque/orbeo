@@ -139,7 +139,10 @@ export default function Escritorios() {
   const [criado, setCriado] = useState(null)
   const [autonomo, setAutonomo] = useState(false)
   const [membros, setMembros] = useState(null)
-  const lista = r.dados || []
+  const lista = (r.dados || []).filter(e => e.tipo !== 'autonomo')
+  async function verLeitura(e) {
+    try { await api.trocarEspaco(e.id); window.location.hash = '#/processos'; window.location.reload() } catch (err) { toast(err.message, 'erro') }
+  }
   async function ativar(e) {
     if (e.ativo && !window.confirm(`Desativar ${e.nome}? Todos os usuários dele perdem o acesso (nada é apagado).`)) return
     try { await api.ativarEscritorio(e.id, !e.ativo); toast(e.ativo ? 'Escritório desativado.' : 'Escritório reativado.'); r.recarregar() } catch (err) { toast(err.message, 'erro') }
@@ -150,7 +153,7 @@ export default function Escritorios() {
       <Topo titulo="Escritórios" sub="Área do dono da plataforma"
         acoes={<button className="btn pequeno" onClick={() => setAutonomo(true)}><Icone nome="usuario" />Advogado autônomo</button>} />
       <div className="aviso info" style={{ marginBottom: 12 }}><Icone nome="cadeado" />
-        <div>Cada escritório só enxerga os próprios dados. Como dono da plataforma, você cria escritórios e o primeiro sócio administrador, mas <b>não vê</b> os processos deles.</div>
+        <div>Cada escritório só enxerga os próprios dados. Como dono da plataforma, você pode abrir qualquer escritório em <b>modo leitura</b> (ver, sem alterar). Advogados autônomos ficam em Usuários → Autônomos.</div>
       </div>
       {r.erro && <Erro erro={r.erro} tentar={r.recarregar} />}
       {r.carregando && !r.dados ? <Carregando n={2} /> : lista.length ? (
@@ -162,6 +165,7 @@ export default function Escritorios() {
               <div className="linha">{e.usuarios} usuário{e.usuarios === 1 ? '' : 's'} · {e.processos} processo{e.processos === 1 ? '' : 's'} · desde {new Date(e.criado_em).toLocaleDateString('pt-BR')}</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <button className="btn pequeno" onClick={() => setMembros(e)}><Icone nome="usuarios" />Membros</button>
+                <button className="btn pequeno" onClick={() => verLeitura(e)}><Icone nome="processos" />Ver processos</button>
                 <button className="btn pequeno" onClick={() => ativar(e)}>{e.ativo ? 'Desativar' : 'Reativar'}</button>
               </div>
             </div>

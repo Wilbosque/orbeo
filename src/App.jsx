@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom'
 import * as api from '#backend'
 import { Navegacao, ToastProvider } from './components/ui.jsx'
+import Icone from './components/Icone.jsx'
 import Login from './pages/Login.jsx'
 import Inicio from './pages/Inicio.jsx'
 import Clientes from './pages/Clientes.jsx'
@@ -40,13 +41,13 @@ export default function App() {
     if (!userId) { setPerfil(undefined); return }
     api.meuPerfil().then(async p => {
       // Espaço em uso saiu (escritório desativado ou vínculo removido): passa para outro espaço ativo
-      if (p?.espacos?.length && !p.espacos.some(e => e.em_uso)) { await api.trocarEspaco(p.espacos[0].id); p = await api.meuPerfil() }
+      if (p?.espacos?.length && !p.atual) { await api.trocarEspaco(p.espacos[0].id); p = await api.meuPerfil() }
       setPerfil(p)
     }).catch(() => setPerfil(null))
   }, [userId])
 
   // Estagiário: esconde botões de cadastro/edição (o banco também bloqueia)
-  useEffect(() => { document.body.classList.toggle('estagiario', perfil?.papel === 'estagiario') }, [perfil?.papel])
+  useEffect(() => { document.body.classList.toggle('estagiario', perfil?.papel === 'estagiario' || Boolean(perfil?.observador)) }, [perfil?.papel, perfil?.observador])
 
   let conteudo
   if (sessao === undefined || (sessao && perfil === undefined)) conteudo = <div className="login" aria-busy="true" />
@@ -73,6 +74,13 @@ export default function App() {
         <div className="app">
           <Navegacao perfil={perfil} aoSair={() => api.sair()} />
           <main className="main">
+            {perfil.observador && (
+              <div className="faixa-leitura">
+                <Icone nome="info" width="18" height="18" />
+                <div style={{ flex: 1 }}><b>Modo leitura</b> · você está vendo {perfil.atual?.tipo === 'autonomo' ? 'o espaço autônomo' : 'o escritório'} <b>{perfil.atual?.nome}</b>. Nada pode ser alterado.</div>
+                <button className="btn pequeno" onClick={async () => { const meu = perfil.espacos?.[0]; if (meu) { await api.trocarEspaco(meu.id); window.location.hash = '#/'; window.location.reload() } }}>Voltar ao meu espaço</button>
+              </div>
+            )}
             <Routes>
               <Route path="/" element={<Inicio />} />
               <Route path="/processos" element={<Processos />} />

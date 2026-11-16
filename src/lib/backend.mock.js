@@ -122,10 +122,20 @@ export async function meuPerfil() {
   await atraso(); if (!db.oabs) { semearOabs(); gravar() } semearEquipe()
   const a = db.advogados.find(a => a.id === me())
   return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: db._espaco || 'Escritório principal' }, dono: a.id === EU,
+    atual: { nome: db._espaco || 'Escritório principal', tipo: (db._espaco || '').includes('autônomo') ? 'autonomo' : 'escritorio', papel: db._espaco === 'Paulo Mendes (autônomo)' ? 'observador' : a.papel, observador: db._espaco === 'Paulo Mendes (autônomo)' },
+    observador: db._espaco === 'Paulo Mendes (autônomo)',
     espacos: a.id === EU ? [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: 'admin', em_uso: (db._espaco || 'Escritório principal') === 'Escritório principal' },
       { id: 'ea', nome: 'Wilquer Bosque (autônomo)', tipo: 'autonomo', papel: 'admin', em_uso: db._espaco === 'Wilquer Bosque (autônomo)' }] : [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: a.papel, em_uso: true }] } : null
 }
-export async function trocarEspaco(id) { await atraso(); db._espaco = id === 'ea' ? 'Wilquer Bosque (autônomo)' : 'Escritório principal'; gravar() }
+export async function trocarEspaco(id) { await atraso(); db._espaco = id === 'ea' ? 'Wilquer Bosque (autônomo)' : id === 'e1' ? 'Escritório principal' : 'Paulo Mendes (autônomo)'; gravar() }
+export async function plataformaListar() {
+  await atraso(); semearEquipe()
+  if (!db._autonomos) { db._autonomos = [{ id: 'aut1', nome: 'Paulo Mendes', email: 'paulo@adv.br', oab_numero: '77777', oab_uf: 'BA', ativo: true, ultimo_acesso: null, autonomo: true,
+    espacos: [{ id: 'eaut1', nome: 'Paulo Mendes (autônomo)', tipo: 'autonomo', papel: 'admin', ativo: true, processos: 3 }] }]; gravar() }
+  return [...db.advogados.map(a => ({ ...a, autonomo: false, espacos: [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: a.papel, ativo: true, processos: 6 }] })), ...db._autonomos]
+}
+export async function plataformaAtivar(id, ativo) { await atraso(); const a = (db._autonomos || []).find(x => x.id === id); if (a) a.ativo = ativo; gravar() }
+export async function plataformaExcluir(id) { await atraso(); db._autonomos = (db._autonomos || []).filter(x => x.id !== id); gravar() }
 export async function adminPreviaSaida(id) {
   await atraso(); const meus = db.processo_advogados.filter(x => x.advogado_id === id).map(x => x.processo_id)
   return { prazos_abertos: db.prazos.filter(z => z.responsavel_id === id && z.status === 'aberto').length, outros_espacos: [],

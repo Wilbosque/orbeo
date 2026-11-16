@@ -59,6 +59,8 @@ export async function meuPerfil() {
   if (p) {
     p.dono = Boolean((await sb.rpc('sou_dono_plataforma')).data)
     p.espacos = ok(await sb.from('vw_meus_espacos').select('*').order('tipo').order('nome'))
+    p.atual = (ok(await sb.rpc('espaco_atual')) || [])[0] || null
+    p.observador = Boolean(p.atual?.observador)
   }
   return p
 }
@@ -293,6 +295,9 @@ export const membrosEscritorio = async id => (await admin('membros_listar', { es
 export const incluirExistente = d => admin('incluir', d)
 export const remanejarAdvogado = d => admin('remanejar', d)
 export const criarAutonomo = d => admin('autonomo_criar', d)
+export const plataformaListar = async () => (await admin('plataforma_listar')).usuarios
+export const plataformaAtivar = (id, ativo) => admin('plataforma_ativar', { id, ativo })
+export const plataformaExcluir = id => admin('plataforma_excluir', { id })
 
 // ---------- DataJud ----------
 // ---------- Processos novos identificados (descoberta diária) ----------
