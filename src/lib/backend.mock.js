@@ -64,9 +64,9 @@ function semente() {
 }
 
 let db
-try { db = JSON.parse(localStorage.getItem('mockdb9')) } catch { db = null }
+try { db = JSON.parse(localStorage.getItem('mockdb10')) } catch { db = null }
 if (!db) db = semente()
-const gravar = () => { try { localStorage.setItem('mockdb9', JSON.stringify(db)) } catch { /* sem storage */ } }
+const gravar = () => { try { localStorage.setItem('mockdb10', JSON.stringify(db)) } catch { /* sem storage */ } }
 
 const ouvintes = new Set()
 const me = () => db.sessao?.user?.id
@@ -115,14 +115,33 @@ function semearEquipe() {
   if (db.advogados.some(a => a.papel)) return
   db.advogados.forEach(a => { a.papel = a.admin ? 'admin' : 'advogado'; a.visao_geral = false })
   db.advogados.push({ id: 'estag1', nome: 'Ana Estagiária', oab_numero: '12345E', oab_uf: 'BA', email: 'ana@exemplo.com', admin: false, papel: 'estagiario', visao_geral: false, ativo: true, trocar_senha: false, ultimo_acesso: null })
-  db.escritorios = [{ id: 'e1', nome: 'Escritório principal', ativo: true, criado_em: new Date().toISOString(), usuarios: 3, processos: 6 }]
+  db.escritorios = [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', ativo: true, criado_em: new Date().toISOString(), usuarios: 3, processos: 6 }]
   gravar()
 }
 export async function meuPerfil() {
   await atraso(); if (!db.oabs) { semearOabs(); gravar() } semearEquipe()
   const a = db.advogados.find(a => a.id === me())
-  return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: 'Escritório principal' }, dono: a.id === EU } : null
+  return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: db._espaco || 'Escritório principal' }, dono: a.id === EU,
+    espacos: a.id === EU ? [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: 'admin', em_uso: (db._espaco || 'Escritório principal') === 'Escritório principal' },
+      { id: 'ea', nome: 'Wilquer Bosque (autônomo)', tipo: 'autonomo', papel: 'admin', em_uso: db._espaco === 'Wilquer Bosque (autônomo)' }] : [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: a.papel, em_uso: true }] } : null
 }
+export async function trocarEspaco(id) { await atraso(); db._espaco = id === 'ea' ? 'Wilquer Bosque (autônomo)' : 'Escritório principal'; gravar() }
+export async function adminPreviaSaida(id) {
+  await atraso(); const meus = db.processo_advogados.filter(x => x.advogado_id === id).map(x => x.processo_id)
+  return { prazos_abertos: db.prazos.filter(z => z.responsavel_id === id && z.status === 'aberto').length, outros_espacos: [],
+    processos: db.processos.filter(p => meus.includes(p.id)).map(p => ({ id: p.id, numero_cnj: p.numero_cnj, cliente: db.clientes.find(c => c.id === p.cliente_id)?.nome,
+      exclusivo: !db.processo_advogados.some(x => x.processo_id === p.id && x.advogado_id !== id) })) }
+}
+export async function adminRemover(id, d) {
+  await atraso(400)
+  if (d.destino === 'excluir_login') db.advogados = db.advogados.filter(a => a.id !== id); else db.advogados.find(a => a.id === id).ativo = false
+  if (d.sucessor_id) db.processo_advogados.filter(x => x.advogado_id === id).forEach(x => db.processo_advogados.push({ processo_id: x.processo_id, advogado_id: d.sucessor_id }))
+  db.processo_advogados = db.processo_advogados.filter(x => x.advogado_id !== id); gravar(); return { ok: true, login: d.destino === 'excluir_login' ? 'excluido' : 'mantido' }
+}
+export async function membrosEscritorio() { await atraso(); semearEquipe(); return db.advogados.map(a => ({ ...a })) }
+export async function incluirExistente() { await atraso(300) }
+export async function remanejarAdvogado() { await atraso(400) }
+export async function criarAutonomo() { await atraso(400); return { senha_temporaria: senhaDemo() } }
 export async function listarOabs(id) { await atraso(); return id ? oabsDe(id) : db.oabs || [] }
 export async function incluirOab(numero, uf, adv) {
   await atraso(200); const id = adv || me(); const n = String(numero).replace(/\D/g, ''); uf = uf.toUpperCase()
@@ -349,7 +368,7 @@ export async function adminVisaoGeral(id, v) { await atraso(); db.advogados.find
 export async function listarEscritorios() { await atraso(); semearEquipe(); return db.escritorios }
 export async function criarEscritorio(d) {
   await atraso(400); const id = novoId()
-  db.escritorios.push({ id, nome: d.nome, ativo: true, criado_em: new Date().toISOString(), usuarios: 1, processos: 0 }); gravar()
+  db.escritorios.push({ id, nome: d.nome, tipo: 'escritorio', ativo: true, criado_em: new Date().toISOString(), usuarios: 1, processos: 0 }); gravar()
   return { escritorio_id: id, senha_temporaria: senhaDemo() }
 }
 export async function ativarEscritorio(id, ativo) { await atraso(); db.escritorios.find(e => e.id === id).ativo = ativo; gravar() }

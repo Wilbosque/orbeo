@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import Icone from './Icone.jsx'
 import { iniciais, oabCurta, oabsTexto } from '../lib/formato.js'
 import Logo from './Logo.jsx'
+import * as api from '#backend'
 
 // ---------- Avisos rápidos (toast) ----------
 const ToastCtx = createContext(() => {})
@@ -57,6 +58,7 @@ export function Navegacao({ perfil, aoSair }) {
   return (
     <nav className="tabbar" aria-label="Navegação principal">
       <div className="marca"><Logo variante="escuro" /></div>
+      {perfil?.espacos?.length > 1 && <div className="so-desktop-bloco"><SeletorEspaco perfil={perfil} escuro /></div>}
       {itens.map(([to, ic, rot, soDesktop]) => (
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `${isActive ? 'ativo' : ''} ${soDesktop ? 'so-desktop' : ''}`}>
           <Icone nome={ic} />{rot}
@@ -166,5 +168,25 @@ export function Avatares({ advogados = [] }) {
     <span className="avatares" title={advogados.map(a => a.nome).join(', ')}>
       {advogados.map(a => <span key={a.id} className="avatar">{iniciais(a.nome)}</span>)}
     </span>
+  )
+}
+
+// Troca entre escritórios e o espaço autônomo (quando a pessoa tem mais de um)
+export function SeletorEspaco({ perfil, escuro }) {
+  const [trocando, setTrocando] = useState(false)
+  const lista = perfil?.espacos || []
+  if (lista.length < 2) return null
+  const atual = lista.find(e => e.em_uso)?.id || ''
+  async function trocar(id) {
+    setTrocando(true)
+    try { await api.trocarEspaco(id); window.location.hash = '#/'; window.location.reload() } catch (e) { alert(e.message); setTrocando(false) }
+  }
+  return (
+    <label className={`seletor-espaco ${escuro ? 'escuro' : ''}`}>
+      <span>Espaço em uso</span>
+      <select value={atual} disabled={trocando} onChange={e => trocar(e.target.value)} aria-label="Trocar de escritório">
+        {lista.map(e => <option key={e.id} value={e.id}>{e.tipo === 'autonomo' ? 'Meus processos autônomos' : e.nome}</option>)}
+      </select>
+    </label>
   )
 }

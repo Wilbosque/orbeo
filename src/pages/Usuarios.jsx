@@ -5,6 +5,7 @@ import Icone from '../components/Icone.jsx'
 import { Campo, Carregando, Erro, Folha, Topo, useCarregar, useToast } from '../components/ui.jsx'
 import { UFS, iniciais } from '../lib/formato.js'
 import Oabs from '../components/Oabs.jsx'
+import Saida from '../components/Saida.jsx'
 import { PAPEIS } from '../components/Prazos.jsx'
 
 function quando(iso) {
@@ -84,6 +85,7 @@ export default function Usuarios() {
   const [senha, setSenha] = useState(null)       // {senha, email}
   const [sel, setSel] = useState(null)
   const [ocupado, setOcupado] = useState(false)
+  const [saida, setSaida] = useState(null)
 
   async function agir(fn, msg) {
     setOcupado(true)
@@ -163,16 +165,20 @@ export default function Usuarios() {
                   if (sel.ativo && !window.confirm(`Desativar o acesso de ${sel.nome || sel.email}? Ele(a) não conseguirá entrar, mas nada é apagado.`)) return
                   if (await agir(() => api.adminAtivar(sel.id, !sel.ativo), sel.ativo ? 'Acesso desativado.' : 'Acesso reativado.')) setSel(null)
                 }}><Icone nome={sel.ativo ? 'sair' : 'certo'} />{sel.ativo ? 'Desativar acesso' : 'Reativar acesso'}</button>
-                <button className="btn perigo bloco" disabled={ocupado} onClick={async () => {
-                  if (!window.confirm(`Excluir definitivamente ${sel.nome || sel.email}? Essa ação não pode ser desfeita.`)) return
-                  const ok = await agir(() => api.adminExcluir(sel.id), 'Usuário excluído.')
-                  if (ok) setSel(null)
-                }}><Icone nome="lixo" />Excluir usuário</button>
-                <small className="muted">A exclusão só é permitida quando não há processos ou clientes que só este advogado enxerga. Nesses casos, desative o acesso.</small>
+                <button className="btn perigo bloco" disabled={ocupado} onClick={() => setSaida(sel)}><Icone nome="sair" />Remover do escritório</button>
+                <small className="muted">Remover tira o acesso aos processos do escritório. O login só é excluído se ele não usar o Orbeo em outro espaço e você escolher isso.</small>
               </>
             )}
           </div>
         )}
+      </Folha>
+      <Folha titulo={`Remover ${saida?.nome || ''} do escritório`} aberta={Boolean(saida)} fechar={() => setSaida(null)}>
+        {saida && <Saida alvo={saida} equipe={lista} carregarPrevia={() => api.adminPreviaSaida(saida.id)}
+          aoConfirmar={async d => {
+            const res = await api.adminRemover(saida.id, d)
+            toast(res?.login === 'excluido' ? 'Removido do escritório e login excluído.' : 'Removido do escritório.')
+            setSaida(null); setSel(null); r.recarregar()
+          }} />}
       </Folha>
     </>
   )

@@ -419,3 +419,18 @@ button.cartao.aud.encerrada { border-left-color: var(--faint); opacity: .85; }
 .hist .texto { white-space: pre-wrap; color: var(--muted); margin-top: 2px; }
 /* Estagiário: esconde ações de cadastro e edição */
 body.estagiario .so-editor { display: none !important; }
+
+/* Seletor de espaço (escritórios e autônomo) */
+.seletor-espaco { display: grid; gap: 4px; font-size: .78rem; }
+.seletor-espaco span { color: var(--muted); font-weight: 500; }
+.seletor-espaco select { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); padding: 0 10px; font: inherit; font-size: .9rem; color: var(--text, #0f172a); }
+.seletor-espaco.escuro span { color: #94a3b8; }
+.seletor-espaco.escuro select { background: #1e293b; border-color: #334155; color: #fff; }
+.so-desktop-bloco { display: none; }
+@media (min-width: 900px) { .so-desktop-bloco { display: block; padding: 0 12px 12px; } }
+
+.lista-checks { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.caixa-check.compacta { padding: 10px 12px; }
+.seletor-espaco { min-width: 0; }
+.seletor-espaco select { width: 100%; max-width: 100%; box-sizing: border-box; }
+@media (min-width: 900px) { .tabbar .so-desktop-bloco { padding: 0 14px 12px; box-sizing: border-box; width: 100%; } }

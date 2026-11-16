@@ -112,6 +112,13 @@ Rode `supabase/migracoes/10_escritorios.sql` (depois da 09) e publique de novo a
 atuais viram sócios administradores e donos da plataforma. Ninguém ganha visão geral sozinho: o sigilo continua
 até o sócio administrador ligar a visão geral de alguém em Usuários.
 
+## 1.13 Espaço autônomo e advogado em mais de um escritório
+
+Rode `supabase/migracoes/11_espacos.sql` (depois da 10) e publique de novo a função `admin-usuarios`.
+O mesmo login pode estar em vários escritórios e ter um espaço autônomo; a troca é pelo seletor
+(menu lateral no computador; Ajustes no celular). Remover do escritório (sócio) e remanejar (dono) pedem
+um sucessor para os processos exclusivos e permitem autorizar cópias para o espaço autônomo.
+
 ## 2. Configurar o app
 
 Abra `src/config.js` e cole a URL e a chave anon nos lugares indicados.

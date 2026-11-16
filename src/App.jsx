@@ -3,7 +3,6 @@ import { HashRouter, Route, Routes, Navigate } from 'react-router-dom'
 import * as api from '#backend'
 import { Navegacao, ToastProvider } from './components/ui.jsx'
 import Login from './pages/Login.jsx'
-import PrimeiroAcesso from './pages/PrimeiroAcesso.jsx'
 import Inicio from './pages/Inicio.jsx'
 import Clientes from './pages/Clientes.jsx'
 import ClienteForm from './pages/ClienteForm.jsx'
@@ -39,7 +38,11 @@ export default function App() {
   const userId = sessao?.user?.id
   useEffect(() => {
     if (!userId) { setPerfil(undefined); return }
-    api.meuPerfil().then(setPerfil).catch(() => setPerfil(null))
+    api.meuPerfil().then(async p => {
+      // Espaço em uso saiu (escritório desativado ou vínculo removido): passa para outro espaço ativo
+      if (p?.espacos?.length && !p.espacos.some(e => e.em_uso)) { await api.trocarEspaco(p.espacos[0].id); p = await api.meuPerfil() }
+      setPerfil(p)
+    }).catch(() => setPerfil(null))
   }, [userId])
 
   // Estagiário: esconde botões de cadastro/edição (o banco também bloqueia)
@@ -48,7 +51,16 @@ export default function App() {
   let conteudo
   if (sessao === undefined || (sessao && perfil === undefined)) conteudo = <div className="login" aria-busy="true" />
   else if (!sessao) conteudo = <Login />
-  else if (!perfil) conteudo = <PrimeiroAcesso aoSalvar={setPerfil} />
+  else if (!perfil) conteudo = (
+    <TelaCentral subtitulo="Seu cadastro ainda não foi concluído. Peça ao sócio administrador do escritório para criar o seu usuário.">
+      <button className="btn bloco" style={{ marginTop: 18 }} onClick={() => api.sair()}>Sair</button>
+    </TelaCentral>
+  )
+  else if (perfil.espacos && !perfil.espacos.length) conteudo = (
+    <TelaCentral subtitulo="Você não está mais em nenhum escritório ativo do Orbeo. Fale com o sócio administrador ou com o suporte.">
+      <button className="btn bloco" style={{ marginTop: 18 }} onClick={() => api.sair()}>Sair</button>
+    </TelaCentral>
+  )
   else if (perfil.ativo === false) conteudo = (
     <TelaCentral subtitulo="Seu acesso está desativado. Fale com o administrador do escritório.">
       <button className="btn bloco" style={{ marginTop: 18 }} onClick={() => api.sair()}>Sair</button>

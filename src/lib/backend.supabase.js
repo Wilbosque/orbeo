@@ -55,15 +55,20 @@ async function uid() {
 // ---------- Advogados ----------
 export async function meuPerfil() {
   const id = await uid()
-  const p = ok(await sb.from('advogados').select('*, advogado_oabs(id,numero,uf,principal), escritorios(nome)').eq('id', id).maybeSingle())
-  if (p) p.dono = Boolean((await sb.rpc('sou_dono_plataforma')).data)
+  const p = ok(await sb.from('advogados').select('*, advogado_oabs(id,numero,uf,principal), escritorios!advogados_escritorio_id_fkey(nome)').eq('id', id).maybeSingle())
+  if (p) {
+    p.dono = Boolean((await sb.rpc('sou_dono_plataforma')).data)
+    p.espacos = ok(await sb.from('vw_meus_espacos').select('*').order('tipo').order('nome'))
+  }
   return p
 }
+export async function trocarEspaco(escritorioId) { ok(await sb.rpc('trocar_espaco', { p_escritorio: escritorioId })) }
 export async function salvarPerfil({ nome, oab_numero, oab_uf }) {
   const id = await uid()
   const { data: { user } } = await sb.auth.getUser()
+  // O perfil é criado pelo administrador; aqui só se atualiza
   const perfil = ok(await sb.from('advogados')
-    .upsert({ id, nome, oab_numero, oab_uf, email: user.email }).select().single())
+    .update({ nome, oab_numero, oab_uf, email: user.email }).eq('id', id).select().single())
   // Monitorar as publicações da própria OAB no DJEN
   const existente = ok(await sb.from('monitoramentos').select('id')
     .eq('advogado_id', id).eq('tipo', 'oab').maybeSingle())
@@ -281,6 +286,13 @@ export const criarEscritorio = d => admin('escritorio_criar', d)
 export const ativarEscritorio = (id, ativo) => admin('escritorio_ativar', { escritorio_id: id, ativo })
 export const adminRedefinirSenha = id => admin('redefinir_senha', { id })
 export const adminExcluir = id => admin('excluir', { id })
+export const adminPreviaSaida = (id, escritorio_id) => admin('previa_saida', { id, escritorio_id })
+export const adminRemover = (id, d) => admin('remover', { id, ...d })
+// Dono da plataforma: membros e advogados entre escritórios
+export const membrosEscritorio = async id => (await admin('membros_listar', { escritorio_id: id })).membros
+export const incluirExistente = d => admin('incluir', d)
+export const remanejarAdvogado = d => admin('remanejar', d)
+export const criarAutonomo = d => admin('autonomo_criar', d)
 
 // ---------- DataJud ----------
 // ---------- Processos novos identificados (descoberta diária) ----------

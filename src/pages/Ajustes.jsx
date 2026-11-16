@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
 import Icone from '../components/Icone.jsx'
-import { Campo, Folha, Topo, useToast } from '../components/ui.jsx'
+import { Campo, Folha, SeletorEspaco, Topo, useToast } from '../components/ui.jsx'
 import { iniciais, oabsTexto } from '../lib/formato.js'
 import Oabs from '../components/Oabs.jsx'
 import { ativarPush, desativarPush, estadoPush } from '../lib/push.js'
@@ -95,6 +95,8 @@ export default function Ajustes() {
           <div className="linha">{email}</div>
         </div>
       </div>
+
+      {perfil.espacos?.length > 1 && <div className="cartao" style={{ marginTop: 12 }}><SeletorEspaco perfil={perfil} /></div>}
 
       <div className="secao"><h2>Notificações</h2></div>
       <Notificacoes />
