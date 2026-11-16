@@ -1,6 +1,7 @@
 // Backend de DEMONSTRAÇÃO (só no modo "mock"): dados fictícios na memória do navegador.
 // Imita as regras de sigilo do banco para os testes de tela.
 import { digitoCNJ } from './cnj.js'
+import { ESTADUAIS, TJBA_LINK, TJBA_MUNICIPAIS } from './calendarioLocal.js'
 import { calcularPrazo as _calc, inferirRito } from './prazo.js'
 
 const EU = 'u-wilquer', COLEGA = 'u-colega'
@@ -121,7 +122,7 @@ function semearEquipe() {
 export async function meuPerfil() {
   await atraso(); if (!db.oabs) { semearOabs(); gravar() } semearEquipe()
   const a = db.advogados.find(a => a.id === me())
-  return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: db._espaco || 'Escritório principal' }, dono: a.id === EU,
+  return a ? { ...a, advogado_oabs: oabsDe(a.id), escritorios: { nome: db._espaco || 'Escritório principal' }, dono: a.id === EU && !db._semDono,
     atual: { nome: db._espaco || 'Escritório principal', tipo: (db._espaco || '').includes('autônomo') ? 'autonomo' : 'escritorio', papel: db._espaco === 'Paulo Mendes (autônomo)' ? 'observador' : a.papel, observador: db._espaco === 'Paulo Mendes (autônomo)' },
     observador: db._espaco === 'Paulo Mendes (autônomo)',
     espacos: a.id === EU ? [{ id: 'e1', nome: 'Escritório principal', tipo: 'escritorio', papel: 'admin', em_uso: (db._espaco || 'Escritório principal') === 'Escritório principal' },
@@ -231,7 +232,7 @@ export async function salvarProcesso(p, colegas = []) {
     db.processos.push(salvo); db.processo_advogados.push({ processo_id: salvo.id, advogado_id: me() })
   }
   for (const a of colegas) await incluirColega(salvo.id, a)
-  gravar(); return salvo
+  gravar(); gerarCalendarioMock(); return salvo
 }
 export async function excluirProcesso(id) { await atraso(); db.processos = db.processos.filter(p => p.id !== id); gravar() }
 export async function incluirColega(pid, aid) {
@@ -318,6 +319,38 @@ function semearSuspensoes() {
 }
 if (!db.suspensoes) { semearSuspensoes(); gravar() }
 
+// Calendário local (feriados estaduais e municipais) → sugestões, como a rotina diária do Supabase
+const semAcento = t => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
+function pascoaDe(ano) {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3)
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451)
+  return new Date(ano, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1, 12)
+}
+function gerarCalendarioMock() {
+  const hoje = hojeSP(), lim = new Date(); lim.setDate(lim.getDate() + 370); const limite = lim.toLocaleDateString('en-CA')
+  const uso = new Map()
+  for (const p of db.processos || []) if (['ativo', 'suspenso'].includes(p.situacao) && p.tribunal) uso.set(p.tribunal + '|' + semAcento(p.comarca), p)
+  const itens = [...ESTADUAIS, ...Object.entries(TJBA_MUNICIPAIS).flatMap(([com, ds]) => ds.map(([mes, dia]) => ({ uf: 'BA', comarca: com, mes, dia, motivo: 'Feriado municipal de ' + com, base_legal: 'TJBA · Decreto Judiciário nº 09/2026 (feriados municipais das comarcas)', link: TJBA_LINK, tribunais: ['TJBA'], instancia: '1g' })))]
+  const anos = [new Date().getFullYear(), new Date().getFullYear() + 1]
+  db.sugestoes = db.sugestoes || []
+  for (const c of itens) for (const ano of anos) {
+    const dt = c.pascoa_offset != null ? (() => { const x = pascoaDe(ano); x.setDate(x.getDate() + c.pascoa_offset); return x })() : new Date(ano, c.mes - 1, c.dia, 12)
+    const d = dt.toLocaleDateString('en-CA'); if (d < hoje || d > limite || [0, 6].includes(dt.getDay())) continue
+    for (const p of uso.values()) {
+      if (!c.tribunais.includes(p.tribunal) || (c.comarca && semAcento(c.comarca) !== semAcento(p.comarca))) continue
+      const chave = `${c.uf}:${c.comarca || ''}:${c.motivo}:${d}:${p.tribunal}`
+      if (db.sugestoes.some(g => g.dados?.chave === chave)) continue
+      if (db.suspensoes.some(s => s.data_inicio <= d && s.data_fim >= d && !s.hora_inicio && (s.abrangencia === 'nacional' || (s.tribunal === p.tribunal && (s.abrangencia === 'tribunal' || (c.comarca && s.abrangencia === 'comarca' && semAcento(s.comarca) === semAcento(p.comarca))))))) continue
+      db.sugestoes.push({ id: 'cal' + novoId(), tipo: 'suspensao', status: 'pendente', criado_em: agora(),
+        justificativa: c.comarca ? `Feriado municipal da comarca de ${p.comarca}, da relação publicada pelo TJBA no Decreto Judiciário nº 09/2026.${ano > 2026 ? ` Para ${ano}, confira se o decreto do ano manteve a data.` : ''}`
+          : `Feriado estadual (${c.uf}) do calendário do Orbeo. Antes de confirmar, verifique se o ${p.tribunal} suspendeu o expediente e os prazos nesta data; em geral consta do calendário anual do tribunal.`,
+        dados: { abrangencia: c.comarca ? 'comarca' : 'tribunal', tribunal: p.tribunal, comarca: c.comarca ? p.comarca : undefined, instancia: c.instancia, data_inicio: d, data_fim: d, tipo: 'feriado', motivo: c.motivo, numero_ato: c.base_legal, link_ato: c.link || undefined, origem: 'calendario', chave } })
+    }
+  }
+  gravar()
+}
+gerarCalendarioMock()
+
 export async function listarSuspensoes(ini, fim) {
   await atraso(); return db.suspensoes.filter(s => s.data_inicio <= fim && s.data_fim >= ini).sort((a, b) => a.data_inicio.localeCompare(b.data_inicio))
 }
@@ -332,7 +365,7 @@ export async function salvarSuspensao(s) {
   gravar(); return limpo
 }
 export async function excluirSuspensao(id) { await atraso(); db.suspensoes = db.suspensoes.filter(s => s.id !== id || s.fonte === 'regra'); gravar() }
-export async function sugestoesSuspensao() { await atraso(); return db.sugestoes.filter(s => s.status === 'pendente') }
+export async function sugestoesSuspensao() { await atraso(); return db.sugestoes.filter(s => s.status === 'pendente' && s.tipo === 'suspensao') }
 export async function confirmarSugestaoSuspensao(id, ajustes) {
   await atraso(200)
   const sg = db.sugestoes.find(s => s.id === id); const d = { ...sg.dados, ...(ajustes || {}) }

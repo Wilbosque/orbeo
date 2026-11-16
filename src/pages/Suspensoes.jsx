@@ -211,14 +211,15 @@ function CartaoSugestao({ sg, aoDecidir }) {
     <div className="cartao" style={{ borderLeft: `5px solid ${(TIPOS[d.tipo] || TIPOS.ato).cor}` }}>
       <div className="cartao-topo"><b>{rotuloPeriodo(d)}</b><SeloTipo tipo={d.tipo} /></div>
       <h3>{d.motivo}</h3>
+      {d.origem === 'calendario' && <span className="selo violeta" style={{ marginBottom: 4, display: 'inline-block' }}>Calendário {d.comarca ? 'municipal' : 'estadual'}</span>}
       <div className="linha" style={{ whiteSpace: 'normal' }}>{rotuloAbrangencia(d)}{d.numero_ato ? ` · ${d.numero_ato}` : ''}</div>
       {sg.justificativa && (
         <div style={{ marginTop: 8 }}>
-          <button className="link-btn" onClick={() => setAbertoTrecho(!abertoTrecho)}>{abertoTrecho ? 'Ocultar trecho do ato' : 'Ver trecho do ato'}</button>
+          <button className="link-btn" onClick={() => setAbertoTrecho(!abertoTrecho)}>{d.origem === 'calendario' ? (abertoTrecho ? 'Ocultar a origem' : 'De onde veio') : abertoTrecho ? 'Ocultar trecho do ato' : 'Ver trecho do ato'}</button>
           {abertoTrecho && <blockquote className="trecho">{sg.justificativa}</blockquote>}
         </div>
       )}
-      {d.link_ato && <a className="link-btn" href={d.link_ato} target="_blank" rel="noreferrer" style={{ display: 'inline-block' }}>Abrir ato no site do tribunal</a>}
+      {d.link_ato && <a className="link-btn" href={d.link_ato} target="_blank" rel="noreferrer" style={{ display: 'inline-block' }}>{d.origem === 'calendario' ? 'Abrir o decreto' : 'Abrir ato no site do tribunal'}</a>}
       <div style={{ marginTop: 8 }}><PrazosAfetados s={{ ...d, data_fim: d.data_fim || d.data_inicio }} /></div>
       <div className="acoes-sugestao">
         <button className="btn pequeno perigo" onClick={rejeitar}>Rejeitar</button>
@@ -275,6 +276,13 @@ export default function Suspensoes() {
   const fim = modo === 'calendario' ? gradeDoMes(ano, mes)[41].data : iso(new Date(agora.getFullYear() + 1, agora.getMonth() + 1, 0))
   const r = useCarregar(() => Promise.all([api.listarSuspensoes(ini, fim), api.sugestoesSuspensao(), api.tribunaisEmUso()]), [ini, fim])
   const [todas, sugestoes, emUso] = r.dados || [[], [], []]
+  async function confirmarCalendario() {
+    const lista = sugestoes.filter(sg => sg.dados?.origem === 'calendario')
+    try {
+      for (const sg of lista) await api.confirmarSugestaoSuspensao(sg.id, null)
+      toast(`${lista.length} feriados confirmados e incluídos no calendário.`); r.recarregar()
+    } catch (e) { toast(e.message, 'erro'); r.recarregar() }
+  }
   useEffect(() => { if (sugestoes.length === 0) setRevisar(false) }, [sugestoes.length])
 
   const tribunaisFiltro = [...new Set(emUso.map(t => t.tribunal))].sort()
@@ -310,7 +318,7 @@ export default function Suspensoes() {
       {sugestoes.length > 0 && (
         <button className="cartao faixa-sugestoes" onClick={() => setRevisar(true)}>
           <Icone nome="radar" width="24" height="24" />
-          <div style={{ flex: 1 }}><b>{sugestoes.length} suspens{sugestoes.length > 1 ? 'ões encontradas' : 'ão encontrada'} nos diários</b>
+          <div style={{ flex: 1 }}><b>{sugestoes.length} suspens{sugestoes.length > 1 ? 'ões' : 'ão'} de prazo para confirmar</b>
             <div className="linha">Revise e confirme para entrar no calendário e na contagem dos prazos.</div></div>
           <Icone nome="seta" width="20" height="20" />
         </button>
@@ -356,8 +364,13 @@ export default function Suspensoes() {
           somenteLeitura={form.inicial?.fonte === 'regra'} aoExcluir={form.inicial?.id ? () => excluir(form.inicial) : null} />}
       </Folha>
 
-      <Folha titulo="Sugestões encontradas nos diários" aberta={revisar} fechar={() => setRevisar(false)}>
-        <p className="muted" style={{ marginTop: 0 }}>A varredura leu os atos dos tribunais e encontrou estas suspensões. Nada entra no calendário nem muda prazo sem a sua confirmação. A decisão vale para os dois advogados.</p>
+      <Folha titulo="Suspensões para confirmar" aberta={revisar} fechar={() => setRevisar(false)}>
+        <p className="muted" style={{ marginTop: 0 }}>Vêm dos atos publicados nos diários, do calendário de feriados estaduais e municipais dos tribunais dos seus processos e de outros escritórios que usam o Orbeo. Nada entra no calendário nem muda prazo sem a confirmação de alguém do escritório.</p>
+        {sugestoes.filter(sg => sg.dados?.origem === 'calendario').length > 1 && (
+          <button className="btn bloco so-editor" style={{ marginBottom: 10 }} onClick={confirmarCalendario}>
+            <Icone nome="certo" />Confirmar os {sugestoes.filter(sg => sg.dados?.origem === 'calendario').length} feriados do calendário
+          </button>
+        )}
         <div className="lista">{sugestoes.map(sg => <CartaoSugestao key={sg.id} sg={sg} aoDecidir={r.recarregar} />)}</div>
       </Folha>
     </>

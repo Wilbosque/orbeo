@@ -97,3 +97,8 @@ select cron.schedule(
 
 -- Conferência: deve listar os quatro agendamentos
 select jobname, schedule, active from cron.job where jobname like 'orbeo-%';
+
+-- Calendário local (feriados estaduais e municipais → sugestões de suspensão): todo dia às 07:20 (Brasília) = 10:20 UTC.
+-- Só SQL, não chama função externa. A migração 13 já cria este agendamento; repetir aqui não duplica.
+select cron.unschedule(jobid) from cron.job where jobname = 'orbeo-calendario-local';
+select cron.schedule('orbeo-calendario-local', '20 10 * * *', 'select public.gerar_sugestoes_calendario()');
