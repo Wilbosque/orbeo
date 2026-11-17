@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import * as api from '#backend'
 import { usePerfil } from '../App.jsx'
+import Sino from '../components/Sino.jsx'
 import Icone from '../components/Icone.jsx'
 import Logo from '../components/Logo.jsx'
 import { Carregando, Erro, Topo, useCarregar } from '../components/ui.jsx'
@@ -52,7 +53,7 @@ export default function Inicio() {
   return (
     <>
       <div className="so-celular topo-marca"><Logo /></div>
-      <Topo titulo={`${saudacao()}, ${perfil.nome.split(' ')[0]}`} sub={dataHoje} />
+      <Topo titulo={`${saudacao()}, ${perfil.nome.split(' ')[0]}`} sub={dataHoje} acoes={<span className="so-celular"><Sino /></span>} />
       {r.erro && <Erro erro={r.erro} tentar={r.recarregar} />}
       {r.carregando && !r.dados ? <Carregando n={3} /> : res && (
         <>

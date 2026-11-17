@@ -21,6 +21,7 @@ import Usuarios from './pages/Usuarios.jsx'
 import Pesquisa from './pages/Pesquisa.jsx'
 import Novos from './pages/Novos.jsx'
 import Escritorios from './pages/Escritorios.jsx'
+import Notificacoes from './pages/Notificacoes.jsx'
 import TrocarSenhaObrigatoria from './pages/TrocarSenhaObrigatoria.jsx'
 import { TelaCentral } from './pages/Login.jsx'
 
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="/clientes/:id" element={<ClienteDetalhe />} />
               <Route path="/clientes/:id/editar" element={<ClienteForm />} />
               <Route path="/ajustes" element={<Ajustes />} />
+              <Route path="/notificacoes" element={<Notificacoes />} />
               <Route path="/suspensoes" element={<Suspensoes />} />
               <Route path="/ajustes/fontes" element={<Fontes />} />
               <Route path="/ajustes/saude" element={<Saude />} />

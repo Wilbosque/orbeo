@@ -317,7 +317,7 @@ export async function salvarInscricaoPush(sub, aparelho) {
   else ok(await sb.from('push_inscricoes').insert(linha))
 }
 export async function removerInscricaoPush(endpoint) { ok(await sb.from('push_inscricoes').delete().eq('endpoint', endpoint)) }
-export async function meusAparelhos() { return ok(await sb.from('push_inscricoes').select('id,aparelho,criado_em,ultimo_envio').order('criado_em')) }
+export async function meusAparelhos() { return ok(await sb.from('push_inscricoes').select('id,aparelho,criado_em,ultimo_envio,falhas').order('criado_em')) }
 export const pushTeste = () => invocar('datajud-sync', { acao: 'push_teste' })
 
 // Região de São Paulo: o DJEN só aceita conexões vindas do Brasil
@@ -394,3 +394,25 @@ export async function reabrirPrazo(id) {
   return ok(await sb.from('prazos').update({ status: 'aberto', data_cumprimento: null, cumprido_por: null, cumprimento_obs: null }).eq('id', id).select().single())
 }
 export async function excluirPrazo(id) { ok(await sb.from('prazos').delete().eq('id', id)) }
+
+// ---------- Notificações pessoais ----------
+export const PREFS_PADRAO = { prazos: true, prazos_hora: 7, prazos_dias: 1, prazos_elaborar: true, audiencias: true, aud_vespera_hora: 18,
+  aud_horas_antes: 2, publicacoes: true, novos: true, sugestoes: true, sugestoes_hora: 8, escopo: 'meus' }
+export async function minhasPreferencias() {
+  const p = ok(await sb.from('notif_preferencias').select('*').maybeSingle())
+  return { ...PREFS_PADRAO, ...(p || {}) }
+}
+export async function salvarPreferencias(p) {
+  const id = await uid()
+  const { advogado_id, atualizado_em, ...resto } = p
+  return ok(await sb.from('notif_preferencias').upsert({ ...resto, advogado_id: id, atualizado_em: new Date().toISOString() }).select().single())
+}
+export async function listarNotificacoes() {
+  return ok(await sb.from('notificacoes').select('*').order('criado_em', { ascending: false }).limit(150))
+}
+export async function contarNaoLidas() {
+  const { count, error } = await sb.from('notificacoes').select('id', { count: 'exact', head: true }).is('lida_em', null)
+  if (error) return 0
+  return count || 0
+}
+export async function marcarNotificacoesLidas(ids = null) { return ok(await sb.rpc('marcar_notificacoes_lidas', { p_ids: ids })) }

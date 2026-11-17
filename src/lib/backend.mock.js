@@ -601,3 +601,29 @@ export async function decidirDescoberta(avisoId, status) {
   await atraso(200); const a = db.descobertas.find(x => x.aviso_id === avisoId)
   a.status = status; a.decidido_em = status === 'pendente' ? null : new Date().toISOString(); a.decidido_por_nome = status === 'pendente' ? null : 'Wilquer Bosque'; gravar()
 }
+
+// ---------- Notificações pessoais (demonstração) ----------
+export const PREFS_PADRAO = { prazos: true, prazos_hora: 7, prazos_dias: 1, prazos_elaborar: true, audiencias: true, aud_vespera_hora: 18,
+  aud_horas_antes: 2, publicacoes: true, novos: true, sugestoes: true, sugestoes_hora: 8, escopo: 'meus' }
+function semearNotificacoes() {
+  const h = (horas) => new Date(Date.now() - horas * 3600_000).toISOString()
+  const d1 = (db.descobertas || [])[0]
+  db.notificacoes = [
+    { id: 'n1', tipo: 'novos', titulo: 'Processos novos identificados', texto: '2 processos dos seus clientes ainda não estão no Orbeo.', url: '#/novos', criado_em: h(5), lida_em: null, push_aparelhos: 0, push_motivo: 'Nenhum aparelho com notificações ativas.' },
+    { id: 'n2', tipo: 'prazos', titulo: 'Prazos', texto: '1 prazo vence hoje, 2 prazos vencem amanhã.', url: '#/prazos', criado_em: h(6), lida_em: null, push_aparelhos: 0, push_motivo: 'Nenhum aparelho com notificações ativas.' },
+    { id: 'n3', tipo: 'publicacao', titulo: 'Publicação nova no DJEN', texto: `${db.clientes?.[0]?.nome || 'Cliente'} · Intimação`, url: '#/processos/p1', criado_em: h(7), lida_em: null, push_aparelhos: 1, push_motivo: null },
+    { id: 'n4', tipo: 'audiencia', titulo: 'Audiência amanhã', texto: `${db.clientes?.[1]?.nome || 'Cliente'} · 09:30`, url: '#/audiencias', criado_em: h(20), lida_em: h(19), push_aparelhos: 1, push_motivo: null },
+    { id: 'n5', tipo: 'sugestoes', titulo: 'Sugestões para confirmar', texto: '3 sugestões aguardam a confirmação do escritório.', url: '#/suspensoes', criado_em: h(29), lida_em: h(28), push_aparelhos: 1, push_motivo: null },
+  ]
+  if (d1) db.notificacoes[0].texto = '2 processos dos seus clientes ainda não estão no Orbeo.'
+}
+if (!db.notificacoes) { semearNotificacoes(); gravar() }
+export async function minhasPreferencias() { await atraso(); return { ...PREFS_PADRAO, ...(db.notifPrefs?.[me()] || {}) } }
+export async function salvarPreferencias(p) { await atraso(); db.notifPrefs = { ...(db.notifPrefs || {}), [me()]: { ...p } }; gravar(); return p }
+export async function listarNotificacoes() { await atraso(); return [...db.notificacoes].sort((a, b) => b.criado_em.localeCompare(a.criado_em)) }
+export async function contarNaoLidas() { return db.notificacoes.filter(n => !n.lida_em).length }
+export async function marcarNotificacoesLidas(ids = null) {
+  await atraso(); let n = 0
+  for (const x of db.notificacoes) if (!x.lida_em && (!ids || ids.includes(x.id))) { x.lida_em = agora(); n++ }
+  gravar(); return n
+}

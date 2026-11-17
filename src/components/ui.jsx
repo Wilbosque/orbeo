@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import Icone from './Icone.jsx'
+import { Contador, useNaoLidas } from './Sino.jsx'
 import { iniciais, oabCurta, oabsTexto } from '../lib/formato.js'
 import Logo from './Logo.jsx'
 import * as api from '#backend'
@@ -41,6 +42,7 @@ export function useCarregar(fn, deps = []) {
 
 // ---------- Estrutura ----------
 export function Navegacao({ perfil, aoSair }) {
+  const naoLidas = useNaoLidas()
   // [rota, ícone, rótulo, só no computador?, só admin?]
   const itens = [
     ['/', 'inicio', 'Início'],
@@ -51,6 +53,7 @@ export function Navegacao({ perfil, aoSair }) {
     ['/audiencias', 'martelo', 'Audiências'],
     ['/clientes', 'clientes', 'Clientes', true],
     ['/suspensoes', 'calendario', 'Suspensões', true],
+    ['/notificacoes', 'sino', 'Notificações', true],
     ['/usuarios', 'usuarios', 'Usuários', true, true],
     ['/escritorios', 'balanca', 'Escritórios', true, 'dono'],
     ['/ajustes', 'engrenagem', 'Ajustes'],
@@ -61,7 +64,7 @@ export function Navegacao({ perfil, aoSair }) {
       {(perfil?.espacos?.length > 1 || perfil?.observador) && <div className="so-desktop-bloco"><SeletorEspaco perfil={perfil} escuro /></div>}
       {itens.map(([to, ic, rot, soDesktop]) => (
         <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `${isActive ? 'ativo' : ''} ${soDesktop ? 'so-desktop' : ''}`}>
-          <Icone nome={ic} />{rot}
+          <Icone nome={ic} />{rot}{to === '/notificacoes' && <Contador n={naoLidas} />}
         </NavLink>
       ))}
       {perfil && (

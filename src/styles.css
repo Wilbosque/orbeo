@@ -437,3 +437,27 @@ body.estagiario .so-editor { display: none !important; }
 
 /* Modo leitura do dono */
 .faixa-leitura { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 14px; border-radius: 12px; background: #fef3c7; color: #78350f; font-size: .88rem; flex-wrap: wrap; }
+
+/* ---------- Notificações ---------- */
+.sino-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; color: inherit; }
+.contador { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: #DC2626; color: #fff; font-size: .7rem; font-weight: 700; line-height: 1; }
+.sino-btn .contador { position: absolute; top: 2px; right: 0; border: 2px solid var(--bg, #F5F6FA); }
+.tabbar a .contador { margin-left: auto; }
+.cartao.notificacao { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; position: relative; }
+.cartao.notificacao.nao-lida { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.notif-icone { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.notif-corpo { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.notif-topo { display: flex; gap: 8px; align-items: baseline; }
+.notif-topo b { flex: 1; }
+.notif-topo small { color: var(--muted); white-space: nowrap; }
+.notif-texto { color: var(--muted); font-size: .92rem; }
+.notif-entrega { display: inline-flex; gap: 5px; align-items: center; font-size: .78rem; }
+.notif-entrega.ok { color: #16A34A; }
+.notif-entrega.falhou { color: #B45309; }
+.ponto-novo { position: absolute; top: 14px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.caixa-check.pref { border: 0; padding: 0; background: none; }
+.pref-detalhes { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.pref-detalhes.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cartao.notificacao.nao-lida .notif-topo small { margin-right: 12px; }

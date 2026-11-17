@@ -8,14 +8,7 @@ import { iniciais, oabsTexto } from '../lib/formato.js'
 import Oabs from '../components/Oabs.jsx'
 import { ativarPush, desativarPush, estadoPush } from '../lib/push.js'
 
-const AVISOS = [
-  ['relogio', 'Prazos que vencem hoje e amanhã', 'resumo às 7h'],
-  ['martelo', 'Audiências', 'na véspera, às 18h, e 2 horas antes'],
-  ['processos', 'Publicações novas no DJEN', 'assim que a consulta encontrar'],
-  ['radar', 'Sugestões para confirmar', 'uma vez por dia, às 8h'],
-]
-
-function Notificacoes() {
+export function CartaoAparelho() {
   const toast = useToast()
   const [estado, setEstado] = useState(null)
   const [ocupado, setOcupado] = useState(false)
@@ -45,8 +38,7 @@ function Notificacoes() {
       )}
       {(estado === 'desligado' || estado === 'ligado') && (
         <>
-          <ul className="avisos-lista">{AVISOS.map(([ic, t, q]) => <li key={t}><Icone nome={ic} width="16" height="16" /><span><b>{t}</b> · {q}</span></li>)}</ul>
-          <small className="muted" style={{ display: 'block', marginBottom: 10 }}>Você só recebe avisos dos seus processos.</small>
+          <small className="muted" style={{ display: 'block', margin: '8px 0 10px' }}>Ative em cada celular ou computador em que quer receber os avisos.</small>
           {estado === 'desligado'
             ? <button className="btn primario bloco" disabled={ocupado} onClick={() => fazer(ativarPush, 'Notificações ativadas neste aparelho.')}><Icone nome="sino" />{ocupado ? 'Ativando…' : 'Ativar notificações'}</button>
             : (
@@ -99,7 +91,11 @@ export default function Ajustes() {
       {perfil.espacos?.length > 1 && <div className="cartao" style={{ marginTop: 12 }}><SeletorEspaco perfil={perfil} /></div>}
 
       <div className="secao"><h2>Notificações</h2></div>
-      <Notificacoes />
+      <CartaoAparelho />
+      <div className="lista" style={{ marginTop: 10 }}>
+        <Link to="/notificacoes?aba=preferencias" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="engrenagem" width="22" height="22" /><span style={{ flex: 1 }}><b>O que receber e em que horário</b><small className="muted" style={{ display: 'block' }}>Prazos, audiências, publicações, processos novos e sugestões</small></span><Icone nome="seta" width="18" height="18" /></Link>
+        <Link to="/notificacoes" className="cartao" style={{ display: 'flex', gap: 12, alignItems: 'center' }}><Icone nome="sino" width="22" height="22" /><b style={{ flex: 1 }}>Notificações recebidas</b><Icone nome="seta" width="18" height="18" /></Link>
+      </div>
 
       <div className="secao"><h2>Conta</h2></div>
       <div className="lista">

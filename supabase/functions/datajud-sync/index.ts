@@ -572,11 +572,50 @@ async function enviarParaAdvogado(servico: any, advogadoId: string, aviso: Aviso
   return enviados
 }
 
-/** Envia só se esse aviso (chave) ainda não foi para esse advogado */
-async function avisarUmaVez(servico: any, advogadoId: string, chave: string, aviso: Aviso) {
-  const { error } = await servico.from('push_enviados').insert({ advogado_id: advogadoId, chave })
-  if (error) return 0 // já enviado
-  return enviarParaAdvogado(servico, advogadoId, aviso)
+/** Registra o aviso no sino do Orbeo e envia aos aparelhos — só uma vez por chave e advogado.
+ *  Fica registrado mesmo sem aparelho cadastrado, com o motivo de não ter chegado ao celular. */
+async function avisarUmaVez(servico: any, advogadoId: string, chave: string, tipo: string, aviso: Aviso) {
+  const { data: nova, error } = await servico.from('notificacoes')
+    .insert({ advogado_id: advogadoId, chave, tipo, titulo: aviso.titulo, texto: aviso.texto, url: aviso.url || '#/' })
+    .select('id').maybeSingle()
+  if (error || !nova) return 0 // já avisado
+  let n = 0, motivo: string | null = null
+  try {
+    n = await enviarParaAdvogado(servico, advogadoId, aviso)
+    if (!n) {
+      const { count } = await servico.from('push_inscricoes').select('id', { count: 'exact', head: true }).eq('advogado_id', advogadoId)
+      motivo = count ? 'O aparelho não aceitou o envio. Desative e ative as notificações nele.' : 'Nenhum aparelho com notificações ativas.'
+    }
+  } catch (e) { motivo = 'Falha no envio: ' + (e as Error).message }
+  await servico.from('notificacoes').update({ push_aparelhos: n, push_motivo: motivo }).eq('id', nova.id)
+  return 1
+}
+
+type Prefs = { prazos: boolean; prazos_hora: number; prazos_dias: number; prazos_elaborar: boolean; audiencias: boolean; aud_vespera_hora: number | null;
+  aud_horas_antes: number; publicacoes: boolean; novos: boolean; sugestoes: boolean; sugestoes_hora: number; escopo: 'meus' | 'escritorio' }
+const PREFS_PADRAO: Prefs = { prazos: true, prazos_hora: 7, prazos_dias: 1, prazos_elaborar: true, audiencias: true, aud_vespera_hora: 18,
+  aud_horas_antes: 2, publicacoes: true, novos: true, sugestoes: true, sugestoes_hora: 8, escopo: 'meus' }
+
+/** Quem recebe avisos: todos os usuários ativos, com as preferências de cada um e os processos que cada um acompanha */
+async function destinatarios(servico: any) {
+  const { data: membros } = await servico.from('escritorio_membros').select('advogado_id,escritorio_id,visao_geral,advogados!inner(ativo)').eq('ativo', true)
+  const ativos = (membros || []).filter((m: any) => m.advogados?.ativo !== false)
+  const advogados = [...new Set(ativos.map((m: any) => m.advogado_id))] as string[]
+  const { data: prefs } = await servico.from('notif_preferencias').select('*').in('advogado_id', advogados.length ? advogados : ['00000000-0000-0000-0000-000000000000'])
+  const prefsDe = new Map<string, Prefs>(advogados.map(a => [a, { ...PREFS_PADRAO, ...((prefs || []).find((p: any) => p.advogado_id === a) || {}) }]))
+  const procsDe = new Map<string, Set<string>>(advogados.map(a => [a, new Set<string>()]))
+  const { data: vinc } = await servico.from('processo_advogados').select('processo_id,advogado_id').in('advogado_id', advogados.length ? advogados : ['00000000-0000-0000-0000-000000000000'])
+  for (const v of vinc || []) procsDe.get(v.advogado_id)?.add(v.processo_id)
+  // "Todos os processos do escritório": só para quem tem visão geral naquele escritório
+  const escsGerais = new Map<string, string[]>()
+  for (const m of ativos) if (m.visao_geral && prefsDe.get(m.advogado_id)?.escopo === 'escritorio')
+    escsGerais.set(m.advogado_id, [...(escsGerais.get(m.advogado_id) || []), m.escritorio_id])
+  const todosEscs = [...new Set([...escsGerais.values()].flat())]
+  if (todosEscs.length) {
+    const { data: procs } = await servico.from('processos').select('id,escritorio_id').in('escritorio_id', todosEscs).in('situacao', ['ativo', 'suspenso'])
+    for (const [a, escs] of escsGerais) for (const p of procs || []) if (escs.includes(p.escritorio_id)) procsDe.get(a)!.add(p.id)
+  }
+  return { advogados, prefsDe, procsDe, escsGerais }
 }
 
 const dataBR = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/')
@@ -597,13 +636,20 @@ async function rodadaDescoberta(servico: any) {
   const { data: vinc } = await servico.from('cliente_advogados').select('cliente_id,advogado_id')
   const advsDe = new Map<string, string[]>()
   for (const v of vinc || []) advsDe.set(v.cliente_id, [...(advsDe.get(v.cliente_id) || []), v.advogado_id])
+  const { data: todosCli } = await servico.from('clientes').select('id').not('escritorio_id', 'is', null)
+  for (const c of todosCli || []) if (!advsDe.has(c.id)) advsDe.set(c.id, [])
   const ids = [...advsDe.keys()]
   if (!ids.length) return { buscas: 0, novos: 0 }
   const { data: clientes } = await servico.from('clientes').select('id,tipo,nome,escritorio_id').in('id', ids)
+  // Quem tem visão geral e escolheu acompanhar o escritório todo também recebe
+  const ctxDest = await destinatarios(servico)
+  for (const c of clientes || []) for (const [a, escs] of ctxDest.escsGerais)
+    if (escs.includes(c.escritorio_id) && !(advsDe.get(c.id) || []).includes(a)) advsDe.set(c.id, [...(advsDe.get(c.id) || []), a])
   const escDe = new Map((clientes || []).map((c: any) => [c.id, c.escritorio_id]))
   const { data: termos } = await servico.from('monitoramentos').select('cliente_id,valor').eq('tipo', 'nome_parte').eq('ativo', true).in('cliente_id', ids)
   const pares: { cliente_id: string; termo: string }[] = []
   for (const c of clientes || []) {
+    if (!(advsDe.get(c.id) || []).length) continue // ninguém para avisar
     const meus = [...new Set((termos || []).filter((t: any) => t.cliente_id === c.id).map((t: any) => String(t.valor).trim().toUpperCase()))]
     if (!meus.length && c.tipo === 'PJ') meus.push(String(c.nome).trim().toUpperCase())
     for (const termo of meus) if (termo.length >= 4) pares.push({ cliente_id: c.id, termo })
@@ -634,6 +680,7 @@ async function rodadaDescoberta(servico: any) {
           }, { onConflict: 'cliente_id,numero_cnj' }).select('id').single()
           if (!d) continue
           const linhas = (advsDe.get(p.cliente_id) || []).map(a => ({ descoberta_id: d.id, advogado_id: a }))
+          if (!linhas.length) continue
           const { data: criados } = await servico.from('descoberta_avisos').upsert(linhas, { onConflict: 'descoberta_id,advogado_id', ignoreDuplicates: true }).select('id')
           novos += criados?.length || 0
         }
@@ -648,61 +695,89 @@ async function rodadaDescoberta(servico: any) {
   }
   await servico.from('sincronizacoes').insert({ fonte: 'djen', finalizada_em: new Date().toISOString(), status: erro ? 'parcial' : 'ok', requisicoes: buscas, novidades: novos,
     mensagem: erro ? `Descoberta de processos novos. Último erro: ${erro}` : `Descoberta de processos novos: ${novos} aviso(s) novo(s).` })
-  return { buscas, novos, restantes: Math.max(0, fila.length - buscas) }
+  // Avisa na hora, sem esperar a próxima rodada de avisos
+  const avisados = novos ? await avisarDescobertas(servico) : 0
+  return { buscas, novos, avisados, restantes: Math.max(0, fila.length - buscas) }
 }
 
-/** Rodada de avisos (agendada a cada 15 min) */
+/** Processos novos (descobertas) ainda não avisados: vai direto ao fim da busca diária e também em cada rodada */
+async function avisarDescobertas(servico: any, ctx?: Awaited<ReturnType<typeof destinatarios>>) {
+  const { advogados, prefsDe } = ctx || await destinatarios(servico)
+  const quem = advogados.filter(a => prefsDe.get(a)!.novos)
+  if (!quem.length) return 0
+  const { data: descs } = await servico.from('descoberta_avisos').select('id,advogado_id,descoberta_id,descobertas(numero_cnj,tribunal,clientes(nome,nome_fantasia))')
+    .eq('status', 'pendente').in('advogado_id', quem).gte('notificado_em', new Date(Date.now() - 7 * 86400_000).toISOString())
+  let enviados = 0
+  for (const a of quem) {
+    const meus = (descs || []).filter((x: any) => x.advogado_id === a)
+    if (!meus.length) continue
+    const ineditos: any[] = []
+    for (const d of meus) { const { error } = await servico.from('push_enviados').insert({ advogado_id: a, chave: `desc:${d.id}` }); if (!error) ineditos.push(d) }
+    if (!ineditos.length) continue
+    const um = ineditos[0].descobertas
+    const cli = um?.clientes?.nome_fantasia || um?.clientes?.nome || 'cliente'
+    const aviso = ineditos.length === 1
+      ? { titulo: `Processo novo · ${cli}`, texto: `${um?.numero_cnj} · ${um?.tribunal || ''}. Toque para ver e decidir se cadastra.`, url: `#/novos?id=${ineditos[0].descoberta_id}`, tag: 'novos' }
+      : { titulo: 'Processos novos identificados', texto: `${ineditos.length} processos dos seus clientes ainda não estão no Orbeo.`, url: '#/novos', tag: 'novos' }
+    enviados += await avisarUmaVez(servico, a, `novos:${ineditos[0].id}`, 'novos', aviso)
+  }
+  return enviados
+}
+
+/** Rodada de avisos (agendada a cada 15 min). Respeita as preferências de cada usuário. */
 async function rodadaAvisos(servico: any) {
   const agora = new Date()
   const hoje = hojeSP()
-  const amanha = menosDias(hoje, -1)
   const hora = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hourCycle: 'h23' }).format(agora))
-  const cfg = async (k: string, p: number) => Number(await lerConfig(servico, k, p))
-  const [hPrazos, hVespera, hAntes, hSug] = await Promise.all([
-    cfg('push_hora_prazos', 7), cfg('push_hora_vespera_audiencia', 18), cfg('push_horas_antes_audiencia', 2), cfg('push_hora_sugestoes', 8)])
-
-  // Quem tem aparelho cadastrado
-  const { data: insc } = await servico.from('push_inscricoes').select('advogado_id')
-  const advogados = [...new Set((insc || []).map((i: any) => i.advogado_id))] as string[]
+  const ctx = await destinatarios(servico)
+  const { advogados, prefsDe, procsDe } = ctx
   if (!advogados.length) return { enviados: 0, advogados: 0 }
-  const { data: vinc } = await servico.from('processo_advogados').select('processo_id,advogado_id').in('advogado_id', advogados)
-  const procsDe = new Map<string, Set<string>>()
-  for (const v of vinc || []) { if (!procsDe.has(v.advogado_id)) procsDe.set(v.advogado_id, new Set()); procsDe.get(v.advogado_id)!.add(v.processo_id) }
+  const meu = (a: string, processoId: string) => procsDe.get(a)?.has(processoId)
   let enviados = 0
 
-  // 1) Prazos que vencem hoje e amanhã (resumo)
-  if (hora >= hPrazos) {
-    const { data: przs } = await servico.from('prazos').select('id,processo_id,prazo_fatal,tipo,responsavel_id').eq('status', 'aberto').in('prazo_fatal', [hoje, amanha])
-    for (const a of advogados) {
-      const meus = (przs || []).filter((z: any) => procsDe.get(a)?.has(z.processo_id) || z.responsavel_id === a)
-      if (!meus.length) continue
-      const h = meus.filter((z: any) => z.prazo_fatal === hoje).length, m = meus.length - h
-      const partes = [h && `${plural(h, 'prazo vence', 'prazos vencem')} hoje`, m && `${plural(m, 'prazo vence', 'prazos vencem')} amanhã`].filter(Boolean)
-      enviados += await avisarUmaVez(servico, a, `prazos:${hoje}`, { titulo: 'Prazos', texto: partes.join(' e ') + '.', url: '#/prazos', tag: 'prazos' })
+  // 1) Prazos: resumo diário no horário escolhido, com a janela de dias escolhida
+  const quemPrazos = advogados.filter(a => prefsDe.get(a)!.prazos && hora >= prefsDe.get(a)!.prazos_hora)
+  if (quemPrazos.length) {
+    const maxDias = Math.max(...quemPrazos.map(a => prefsDe.get(a)!.prazos_dias))
+    const { data: przs } = await servico.from('prazos').select('id,processo_id,prazo_fatal,data_elaboracao,tipo,responsavel_id').eq('status', 'aberto')
+      .or(`and(prazo_fatal.gte.${hoje},prazo_fatal.lte.${menosDias(hoje, -maxDias)}),data_elaboracao.eq.${hoje}`)
+    for (const a of quemPrazos) {
+      const p = prefsDe.get(a)!, limite = menosDias(hoje, -p.prazos_dias)
+      const meus = (przs || []).filter((z: any) => meu(a, z.processo_id) || z.responsavel_id === a)
+      const vencem = meus.filter((z: any) => z.prazo_fatal >= hoje && z.prazo_fatal <= limite)
+      const elaborar = p.prazos_elaborar ? meus.filter((z: any) => z.data_elaboracao === hoje && !vencem.includes(z)) : []
+      if (!vencem.length && !elaborar.length) continue
+      const h = vencem.filter((z: any) => z.prazo_fatal === hoje).length, depois = vencem.length - h
+      const quando = p.prazos_dias === 1 ? 'amanhã' : `nos próximos ${p.prazos_dias} dias`
+      const partes = [h && `${plural(h, 'prazo vence', 'prazos vencem')} hoje`, depois && `${plural(depois, 'prazo vence', 'prazos vencem')} ${quando}`,
+        elaborar.length && `${plural(elaborar.length, 'prazo marcado', 'prazos marcados')} para elaborar hoje`].filter(Boolean)
+      enviados += await avisarUmaVez(servico, a, `prazos:${hoje}`, 'prazos', { titulo: 'Prazos', texto: partes.join(', ') + '.', url: '#/prazos', tag: 'prazos' })
     }
   }
 
-  // 2) Audiências: véspera e algumas horas antes
+  // 2) Audiências: véspera e algumas horas antes, nos horários escolhidos
   const { data: auds } = await servico.from('audiencias').select('id,processo_id,data_hora,tipo,processos(numero_cnj,clientes(nome))')
-    .eq('status', 'agendada').gte('data_hora', agora.toISOString()).lte('data_hora', new Date(agora.getTime() + 36 * 3600_000).toISOString())
+    .eq('status', 'agendada').gte('data_hora', agora.toISOString()).lte('data_hora', new Date(agora.getTime() + 48 * 3600_000).toISOString())
+  const amanha = menosDias(hoje, -1)
   for (const au of auds || []) {
     const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(au.data_hora))
     const quem = au.processos?.clientes?.nome || 'Processo'
     const faltaMin = (new Date(au.data_hora).getTime() - agora.getTime()) / 60_000
     for (const a of advogados) {
-      if (!procsDe.get(a)?.has(au.processo_id)) continue
-      if (dia === amanha && hora >= hVespera)
-        enviados += await avisarUmaVez(servico, a, `aud-vespera:${au.id}`, { titulo: 'Audiência amanhã', texto: `${quem} · ${horaSP(au.data_hora)} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
-      if (faltaMin <= hAntes * 60 + 7)
-        enviados += await avisarUmaVez(servico, a, `aud-antes:${au.id}`, { titulo: `Audiência às ${horaSP(au.data_hora)}`, texto: `${quem} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
+      const p = prefsDe.get(a)!
+      if (!p.audiencias || !meu(a, au.processo_id)) continue
+      if (p.aud_vespera_hora != null && dia === amanha && hora >= p.aud_vespera_hora)
+        enviados += await avisarUmaVez(servico, a, `aud-vespera:${au.id}`, 'audiencia', { titulo: 'Audiência amanhã', texto: `${quem} · ${horaSP(au.data_hora)} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
+      if (p.aud_horas_antes > 0 && faltaMin <= p.aud_horas_antes * 60 + 7)
+        enviados += await avisarUmaVez(servico, a, `aud-antes:${au.id}`, 'audiencia', { titulo: `Audiência às ${horaSP(au.data_hora)}`, texto: `${quem} · ${au.processos?.numero_cnj || ''}`, url: `#/processos/${au.processo_id}`, tag: `aud-${au.id}` })
     }
   }
 
-  // 3) Publicações novas no DJEN (das últimas 48 h, ainda não lidas)
+  // 3) Publicações novas no DJEN (das últimas 48 h, ainda não lidas) — um aviso por lote
   const { data: pubs } = await servico.from('publicacoes').select('id,processo_id,tipo_documento,tipo_comunicacao,processos(clientes(nome))')
     .eq('status', 'nova').not('processo_id', 'is', null).gte('criado_em', new Date(agora.getTime() - 48 * 3600_000).toISOString())
-  for (const a of advogados) {
-    const meus = (pubs || []).filter((p: any) => procsDe.get(a)?.has(p.processo_id))
+  for (const a of advogados.filter(a => prefsDe.get(a)!.publicacoes)) {
+    const meus = (pubs || []).filter((p: any) => meu(a, p.processo_id))
     const ineditas: any[] = []
     for (const p of meus) { const { error } = await servico.from('push_enviados').insert({ advogado_id: a, chave: `pub:${p.id}` }); if (!error) ineditas.push(p) }
     if (!ineditas.length) continue
@@ -710,31 +785,22 @@ async function rodadaAvisos(servico: any) {
     const aviso = ineditas.length === 1
       ? { titulo: 'Publicação nova no DJEN', texto: `${um.processos?.clientes?.nome || 'Processo'} · ${um.tipo_documento || um.tipo_comunicacao || 'Publicação'}`, url: `#/processos/${um.processo_id}`, tag: 'djen' }
       : { titulo: 'Publicações novas no DJEN', texto: `${ineditas.length} publicações em ${new Set(ineditas.map(p => p.processo_id)).size} processo(s).`, url: '#/processos?novidades=1', tag: 'djen' }
-    enviados += await enviarParaAdvogado(servico, a, aviso)
+    enviados += await avisarUmaVez(servico, a, `pubs:${ineditas.map(p => p.id).sort()[0]}`, 'publicacao', aviso)
   }
 
-  // 4) Processos novos identificados (só para os advogados do cliente)
-  const { data: descs } = await servico.from('descoberta_avisos').select('id,advogado_id,descoberta_id,descobertas(numero_cnj,tribunal,clientes(nome,nome_fantasia))')
-    .eq('status', 'pendente').in('advogado_id', advogados).gte('notificado_em', new Date(agora.getTime() - 72 * 3600_000).toISOString())
-  for (const a of advogados) {
-    const ineditos: any[] = []
-    for (const d of (descs || []).filter((x: any) => x.advogado_id === a)) {
-      const { error } = await servico.from('push_enviados').insert({ advogado_id: a, chave: `desc:${d.id}` }); if (!error) ineditos.push(d)
-    }
-    if (!ineditos.length) continue
-    const um = ineditos[0].descobertas
-    const cli = um?.clientes?.nome_fantasia || um?.clientes?.nome || 'cliente'
-    enviados += await enviarParaAdvogado(servico, a, ineditos.length === 1
-      ? { titulo: `Processo novo · ${cli}`, texto: `${um?.numero_cnj} · ${um?.tribunal || ''}. Toque para ver e decidir se cadastra.`, url: `#/novos?id=${ineditos[0].descoberta_id}`, tag: 'novos' }
-      : { titulo: 'Processos novos identificados', texto: `${ineditos.length} processos dos seus clientes ainda não estão no Orbeo.`, url: '#/novos', tag: 'novos' })
-  }
+  // 4) Processos novos de clientes
+  enviados += await avisarDescobertas(servico, ctx)
 
-  // 5) Sugestões pendentes (uma vez por dia)
-  if (hora >= hSug) {
-    const { data: sugs } = await servico.from('sugestoes').select('id,tipo,processo_id').eq('status', 'pendente')
+  // 5) Sugestões pendentes do escritório (uma vez por dia, no horário escolhido)
+  const { data: sugs } = await servico.from('sugestoes').select('id,tipo,processo_id,escritorio_id').eq('status', 'pendente')
+  if (sugs?.length) {
+    const { data: membros } = await servico.from('escritorio_membros').select('advogado_id,escritorio_id').eq('ativo', true).in('advogado_id', advogados)
     for (const a of advogados) {
-      const n = (sugs || []).filter((s: any) => s.tipo === 'suspensao' || (s.processo_id && procsDe.get(a)?.has(s.processo_id))).length
-      if (n) enviados += await avisarUmaVez(servico, a, `sugestoes:${hoje}`, { titulo: 'Sugestões para confirmar', texto: `${plural(n, 'sugestão aguarda', 'sugestões aguardam')} a sua confirmação.`, url: '#/', tag: 'sugestoes' })
+      const p = prefsDe.get(a)!
+      if (!p.sugestoes || hora < p.sugestoes_hora) continue
+      const escs = new Set((membros || []).filter((m: any) => m.advogado_id === a).map((m: any) => m.escritorio_id))
+      const n = sugs.filter((s: any) => (s.tipo === 'suspensao' && (!s.escritorio_id || escs.has(s.escritorio_id))) || (s.processo_id && meu(a, s.processo_id))).length
+      if (n) enviados += await avisarUmaVez(servico, a, `sugestoes:${hoje}`, 'sugestoes', { titulo: 'Sugestões para confirmar', texto: `${plural(n, 'sugestão aguarda', 'sugestões aguardam')} a confirmação do escritório.`, url: '#/suspensoes', tag: 'sugestoes' })
     }
   }
   return { enviados, advogados: advogados.length }
@@ -839,7 +905,10 @@ async function tratar(req: Request) {
     const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
     const { data: { user } } = await servico.auth.getUser(token)
     if (!user) return falha('Sessão inválida. Entre de novo.', 401)
-    const n = await enviarParaAdvogado(servico, user.id, { titulo: 'Orbeo', texto: 'Notificações ativadas. É assim que os avisos vão chegar.', url: '#/ajustes', tag: 'teste' })
+    const aviso = { titulo: 'Orbeo', texto: 'Notificações ativadas. É assim que os avisos vão chegar.', url: '#/notificacoes', tag: 'teste' }
+    const n = await enviarParaAdvogado(servico, user.id, aviso)
+    await servico.from('notificacoes').insert({ advogado_id: user.id, chave: `teste:${Date.now()}`, tipo: 'teste', titulo: 'Aviso de teste', texto: aviso.texto, url: aviso.url,
+      push_aparelhos: n, push_motivo: n ? null : 'Nenhum aparelho recebeu.' })
     if (!n) return falha('Nenhum aparelho recebeu. Desative e ative de novo as notificações neste aparelho.')
     return resposta({ enviados: n })
   }
