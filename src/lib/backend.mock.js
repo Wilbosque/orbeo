@@ -86,6 +86,11 @@ function vwProcesso(p) {
     prazos_abertos: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').length,
     proximo_prazo: db.prazos.filter(z => z.processo_id === p.id && z.status === 'aberto').map(z => z.prazo_fatal).sort()[0] || null, novidades: p.id === 'p1' && !p._visto ? 2 : 0,
     proxima_audiencia: (db.audiencias || []).filter(a => a.processo_id === p.id && a.status === 'agendada' && a.data_hora >= new Date(Date.now() - 6 * 3600000).toISOString()).map(a => a.data_hora).sort()[0] || null,
+    partes: p.partes || [
+      { polo: p.polo === 'autor' ? 'ativo' : 'passivo', nome: c?.nome, cliente_id: c?.id },
+      ...(p.parte_contraria ? [{ polo: p.polo === 'autor' ? 'passivo' : 'ativo', nome: p.parte_contraria }] : []),
+    ],
+    baixa_por_nome: p.baixa_por ? db.advogados.find(a => a.id === p.baixa_por)?.nome : null,
   }
 }
 function vwCliente(c) {
@@ -212,7 +217,7 @@ export async function excluirCliente(id) {
 
 export async function listarProcessos(f = {}) {
   await atraso()
-  return db.processos.filter(p => podeVerProcesso(p.id) && (!f.cliente_id || p.cliente_id === f.cliente_id))
+  return db.processos.filter(p => podeVerProcesso(p.id) && (!f.cliente_id || p.cliente_id === f.cliente_id || (p.partes || []).some(x => x.cliente_id === f.cliente_id)))
     .map(vwProcesso).sort((a, b) => b.atualizado_em.localeCompare(a.atualizado_em))
 }
 export async function obterProcesso(id) { await atraso(); return podeVerProcesso(id) ? vwProcesso(db.processos.find(p => p.id === id)) : null }
@@ -232,8 +237,39 @@ export async function salvarProcesso(p, colegas = []) {
     db.processos.push(salvo); db.processo_advogados.push({ processo_id: salvo.id, advogado_id: me() })
   }
   for (const a of colegas) await incluirColega(salvo.id, a)
+  if (p.partes) {
+    const c = db.clientes.find(x => x.id === salvo.cliente_id)
+    const meu = salvo.polo === 'autor' ? 'ativo' : 'passivo'
+    let partes = p.partes.filter(x => x.nome?.trim()).map(x => ({ polo: x.polo, nome: x.nome.trim(), documento: x.documento || null, cliente_id: x.cliente_id || null }))
+    if (!partes.some(x => x.cliente_id === salvo.cliente_id)) partes = [{ polo: meu, nome: c?.nome, cliente_id: c?.id }, ...partes]
+    salvo.partes = partes
+    salvo.parte_contraria = partes.filter(x => x.polo !== meu).map(x => x.nome).join(', ') || null
+  }
   gravar(); gerarCalendarioMock(); return salvo
 }
+export async function darBaixa(pid, d, motivo, obs, cancelar = true) {
+  await atraso(200)
+  const p = db.processos.find(x => x.id === pid)
+  Object.assign(p, { situacao: 'baixado', baixa_data: d, baixa_motivo: motivo, baixa_por: me(), atualizado_em: agora() })
+  let n = 0
+  if (cancelar) for (const z of db.prazos) if (z.processo_id === pid && z.status === 'aberto') { z.status = 'cancelado'; n++ }
+  if (cancelar) for (const a of db.audiencias || []) if (a.processo_id === pid && a.status === "agendada" && a.data_hora > agora()) a.status = "cancelada"
+  db.observacoes = [...(db.observacoes || []), { id: novoId(), processo_id: pid, texto: `Baixa do processo em ${d.split('-').reverse().join('/')} · ${motivo}${obs ? '\n' + obs : ''}`, autor_id: me(), criado_em: agora() }]
+  gravar(); return n
+}
+export async function reativarProcesso(pid) {
+  await atraso(150)
+  Object.assign(db.processos.find(x => x.id === pid), { situacao: 'ativo', baixa_data: null, baixa_motivo: null, baixa_por: null })
+  db.observacoes = [...(db.observacoes || []), { id: novoId(), processo_id: pid, texto: 'Processo reativado.', autor_id: me(), criado_em: agora() }]
+  gravar()
+}
+export async function registrarObservacao(pid, texto) {
+  await atraso(150)
+  const o = { id: novoId(), processo_id: pid, texto: texto.trim(), autor_id: me(), criado_em: agora() }
+  db.observacoes = [...(db.observacoes || []), o]; gravar(); return o
+}
+export async function excluirObservacao(id) { db.observacoes = (db.observacoes || []).filter(o => o.id !== id); gravar() }
+export async function listarComarcas(tribunal) { const { comarcasReserva } = await import('./comarcas.js'); return comarcasReserva(tribunal) }
 export async function excluirProcesso(id) { await atraso(); db.processos = db.processos.filter(p => p.id !== id); gravar() }
 export async function incluirColega(pid, aid) {
   if (!db.processo_advogados.some(x => x.processo_id === pid && x.advogado_id === aid)) {
@@ -249,15 +285,17 @@ export async function removerAdvogado(pid, aid) {
 
 export async function linhaDoTempo(pid) {
   await atraso()
-  if (pid !== 'p1') return []
-  return [
+  const obs = (db.observacoes || []).filter(o => o.processo_id === pid).map(o => ({ origem: 'observacao', item_id: o.id, quando: o.criado_em, titulo: 'Observação',
+    detalhe: o.texto, nova: false, anotacoes: [], extra: { autor_id: o.autor_id, autor_nome: db.advogados.find(a => a.id === o.autor_id)?.nome } }))
+  if (pid !== 'p1') return obs.sort((a, b) => b.quando.localeCompare(a.quando))
+  return [...obs, 
     { origem: 'publicacao', item_id: 'x1', quando: '2026-11-10T12:00:00-03:00', titulo: 'Despacho', nova: !db._pubLida,
       detalhe: 'PODER JUDICIÁRIO DO ESTADO DA BAHIA\n5ª VARA DO SISTEMA DOS JUIZADOS ESPECIAIS DO CONSUMIDOR\n\nDESPACHO\n\nVistos etc. Considerando a juntada da petição de ID 4512, intime-se a parte ré para, no prazo de 5 (cinco) dias, manifestar-se sobre os documentos apresentados pela parte autora, sob pena de preclusão. Após, voltem-me conclusos para sentença. Salvador, 07 de novembro de 2026. Juiz de Direito.',
       extra: { tipo_comunicacao: 'Intimação', orgao: '5ª VSJE do Consumidor', link: 'https://comunica.pje.jus.br/', disponibilizacao: '2026-11-10', status: db._pubPrazo ? 'prazo_criado' : 'nova' }, anotacoes: [] },
     { origem: 'movimentacao', item_id: 'x2', quando: '2026-11-07T14:12:00-03:00', titulo: 'Expedição de documento', detalhe: 'Intimação', nova: true, anotacoes: [] },
     { origem: 'movimentacao', item_id: 'x3', quando: '2026-10-20T09:30:00-03:00', titulo: 'Distribuição', detalhe: 'Sorteio', nova: false,
-      anotacoes: [{ tipo: 'observacao', texto: 'Cliente informou que houve tentativa de acordo pelo WhatsApp.', em: '2026-10-21T10:00:00-03:00' }] },
-  ]
+      anotacoes: [] },
+  ].sort((a, b) => b.quando.localeCompare(a.quando))
 }
 
 export function hojeSP() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()) }
@@ -626,4 +664,9 @@ export async function marcarNotificacoesLidas(ids = null) {
   await atraso(); let n = 0
   for (const x of db.notificacoes) if (!x.lida_em && (!ids || ids.includes(x.id))) { x.lida_em = agora(); n++ }
   gravar(); return n
+}
+if (!db.observacoes) {
+  const outro = db.advogados.find(a => a.id !== EU) || db.advogados[0]
+  db.observacoes = [{ id: 'ob1', processo_id: 'p1', texto: 'Cliente informou que houve tentativa de acordo pelo WhatsApp. Aguardar proposta por escrito.', autor_id: outro.id, criado_em: '2026-10-21T10:00:00-03:00' }]
+  gravar()
 }

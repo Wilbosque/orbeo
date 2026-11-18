@@ -37,6 +37,7 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
   const [salvando, setSalvando] = useState(false)
   const [tocado, setTocado] = useState(false)
   const set = (k, v) => setZ(x => ({ ...x, [k]: v }))
+  const [numero, setNumero] = useState(inicial?.numero_cnj || '')
   const processoId = processoFixo || z.processo_id
 
   const base = useCarregar(() => Promise.all([
@@ -102,14 +103,30 @@ export function PrazoForm({ inicial, processoFixo, aoSalvar, aoExcluir }) {
 
   return (
     <form className="form" onSubmit={salvar} noValidate>
-      {!processoFixo && (
-        <Campo rotulo="Processo" obrigatorio erro={e('processo')}>
-          <select className={`entrada ${e('processo') ? 'invalida' : ''}`} value={z.processo_id || ''} onChange={x => { set('processo_id', x.target.value); set('tipo', '') }}>
-            <option value="">Selecione…</option>
-            {procs.filter(p => p.situacao === 'ativo').map(p => <option key={p.id} value={p.id}>{p.cliente_nome} × {p.parte_contraria || '—'} · {p.numero_cnj}</option>)}
-          </select>
-        </Campo>
-      )}
+      {!processoFixo && (() => {
+        const dig = numero.replace(/\D/g, '')
+        const achado = dig.length === 20 ? procs.find(p => p.numero_cnj.replace(/\D/g, '') === dig) : null
+        const msg = !dig ? '' : dig.length < 20 ? `Faltam ${20 - dig.length} dígito${20 - dig.length > 1 ? 's' : ''}.`
+          : !achado ? 'Nenhum processo cadastrado com este número. Cadastre o processo antes de lançar o prazo.'
+          : achado.situacao === 'baixado' ? 'Este processo está baixado. Reative-o para lançar prazos.' : ''
+        return (
+          <Campo rotulo="Número do processo" obrigatorio erro={msg || (tocado && !z.processo_id ? 'Digite o número de um processo cadastrado.' : '')}
+            ajuda={!dig ? 'Pode digitar com ou sem pontos e traços.' : ''}>
+            <input className={`entrada mono ${msg ? 'invalida' : ''}`} inputMode="numeric" autoComplete="off" placeholder="0000000-00.0000.0.00.0000" value={numero}
+              onChange={x => {
+                const v = x.target.value; setNumero(v)
+                const d = v.replace(/\D/g, '')
+                const p = d.length === 20 ? procs.find(q => q.numero_cnj.replace(/\D/g, '') === d && q.situacao !== 'baixado') : null
+                if ((p?.id || '') !== (z.processo_id || '')) { set('processo_id', p?.id || ''); set('tipo', '') }
+              }} />
+            {achado && !msg && (
+              <div className="processo-achado"><Icone nome="certo" width="16" height="16" />
+                <span><b>{achado.cliente_nome}</b> × {achado.parte_contraria || '—'}<br /><small className="muted">{achado.tribunal}{achado.comarca ? ` · ${achado.comarca}` : ''}{achado.orgao_julgador ? ` · ${achado.orgao_julgador}` : ''}</small></span>
+              </div>
+            )}
+          </Campo>
+        )
+      })()}
       {z.publicacao_id && (
         <div className="aviso info"><Icone nome="info" />
           <div>Prazo da publicação disponibilizada no DJEN em {fmt(z.data_recebimento)}.{inicial?.trecho ? <> No texto: “{inicial.trecho}”.</> : ' O texto não indica a quantidade de dias: confira e informe.'}</div>

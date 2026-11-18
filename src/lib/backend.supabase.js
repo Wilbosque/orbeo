@@ -107,7 +107,7 @@ export async function salvarCliente(c, termos) {
   const campos = {
     tipo: c.tipo, nome: c.nome.trim(), nome_fantasia: c.nome_fantasia || null,
     cpf_cnpj: c.cpf_cnpj || null, email: c.email || null, telefone: c.telefone || null,
-    observacoes: c.observacoes || null,
+    observacoes: c.observacoes || null, contato_nome: c.contato_nome || null,
   }
   const salvo = c.id
     ? ok(await sb.from('clientes').update(campos).eq('id', c.id).select().single())
@@ -133,7 +133,7 @@ export async function excluirCliente(id) {
 // ---------- Processos ----------
 export async function listarProcessos(filtro = {}) {
   let q = sb.from('vw_processos').select('*')
-  if (filtro.cliente_id) q = q.eq('cliente_id', filtro.cliente_id)
+  if (filtro.cliente_id) q = q.or(`cliente_id.eq.${filtro.cliente_id},partes.cs.[{"cliente_id":"${filtro.cliente_id}"}]`)
   return ok(await q.order('atualizado_em', { ascending: false }))
 }
 export async function obterProcesso(id) {
@@ -155,7 +155,28 @@ export async function salvarProcesso(p, colegas = []) {
     ? ok(await sb.from('processos').update(campos).eq('id', p.id).select().single())
     : ok(await sb.from('processos').insert(campos).select().single())
   for (const advId of colegas) await incluirColega(salvo.id, advId)
+  if (p.partes) ok(await sb.rpc('salvar_partes', { p_processo: salvo.id, p_partes: p.partes.map(x => ({ polo: x.polo, nome: x.nome, documento: x.documento || null, cliente_id: x.cliente_id || null })) }))
   return salvo
+}
+export async function darBaixa(processoId, d, motivo, obs, cancelarPrazos = true) {
+  return ok(await sb.rpc('dar_baixa', { p_processo: processoId, p_data: d, p_motivo: motivo, p_obs: obs || null, p_cancelar_prazos: cancelarPrazos }))
+}
+export async function reativarProcesso(processoId) { ok(await sb.rpc('reativar_processo', { p_processo: processoId })) }
+export async function registrarObservacao(processoId, texto) {
+  return ok(await sb.from('anotacoes').insert({ processo_id: processoId, tipo: 'observacao', texto: texto.trim(), autor_id: await uid() }).select().single())
+}
+export async function excluirObservacao(id) { ok(await sb.from('anotacoes').delete().eq('id', id)) }
+// Comarcas/foros do tribunal: catálogo do Orbeo (lista oficial + DataJud); se ainda vazio, usa a lista de municípios
+export async function listarComarcas(tribunal) {
+  const t = (tribunal || '').toUpperCase().replace(/\s+/g, '')
+  const siglas = t === 'TJDF' || t === 'TJDFT' ? ['TJDF', 'TJDFT'] : [t]
+  const { data } = await sb.from('comarcas').select('nome,tipo').in('tribunal', siglas).order('nome').limit(3000)
+  const { comarcasReserva } = await import('./comarcas.js')
+  if (data && data.length >= 5) {
+    const nomes = data.map(c => c.nome)
+    return t === 'TJSP' ? [...nomes.filter(n => n.startsWith('São Paulo - ')), ...nomes.filter(n => !n.startsWith('São Paulo - '))] : nomes
+  }
+  return comarcasReserva(t)
 }
 export async function excluirProcesso(id) {
   ok(await sb.from('processos').delete().eq('id', id))

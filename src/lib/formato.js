@@ -1,6 +1,9 @@
 export const POLOS = { autor: 'Autor', reu: 'Réu' }
-export const SITUACOES = { ativo: 'Ativo', suspenso: 'Suspenso', arquivado: 'Arquivado', encerrado: 'Encerrado' }
-export const TIPOS_ACAO = ['Cível', 'Consumidor', 'Trabalhista', 'Outro']
+export const SITUACOES = { ativo: 'Ativo', suspenso: 'Suspenso', arquivado: 'Arquivado', encerrado: 'Encerrado', baixado: 'Baixado' }
+export const MOTIVOS_BAIXA = ['Trânsito em julgado e arquivamento', 'Acordo cumprido', 'Pagamento / execução satisfeita', 'Desistência ou extinção sem mérito', 'Renúncia ou substabelecimento sem reserva', 'Cliente encerrou o contrato', 'Outro']
+export const POLOS_PARTES = { ativo: 'Polo ativo (autores)', passivo: 'Polo passivo (réus)' }
+export const TIPOS_ACAO = ['Cível', 'Consumidor', 'Trabalhista', 'Previdenciário', 'Tributário', 'Criminal', 'Família e Sucessões', 'Empresarial',
+  'Administrativo', 'Bancário', 'Imobiliário', 'Ambiental', 'Eleitoral', 'Militar', 'Outro']
 export const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB',
                     'PR','PE','PI','RJ','RN','RS','RO','RR','SC','SE','SP','TO']
 

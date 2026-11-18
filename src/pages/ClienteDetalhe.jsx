@@ -40,7 +40,8 @@ export default function ClienteDetalhe() {
           {c.tipo === 'PJ' && <div><dt>Nome fantasia</dt><dd>{c.nome_fantasia || '—'}</dd></div>}
           <div><dt>{c.tipo === 'PJ' ? 'CNPJ' : 'CPF'}</dt><dd className="mono">{c.cpf_cnpj || '—'}</dd></div>
           <div><dt>E-mail</dt><dd>{c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : '—'}</dd></div>
-          <div><dt>Telefone</dt><dd>{c.telefone ? <a href={`tel:${c.telefone.replace(/\D/g, '')}`}>{c.telefone}</a> : '—'}</dd></div>
+          <div><dt>Telefone</dt><dd>{c.telefone ? <><a href={`tel:${c.telefone.replace(/\D/g, '')}`}>{c.telefone}</a> · <a href={`https://wa.me/55${c.telefone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">WhatsApp</a></> : '—'}</dd></div>
+          {c.contato_nome && <div><dt>Pessoa de contato</dt><dd>{c.contato_nome}</dd></div>}
           {c.observacoes && <div><dt>Observações</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{c.observacoes}</dd></div>}
         </dl>
       </div>

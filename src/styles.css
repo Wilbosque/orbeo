@@ -461,3 +461,23 @@ body.estagiario .so-editor { display: none !important; }
 .pref-detalhes { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
 .pref-detalhes.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cartao.notificacao.nao-lida .notif-topo small { margin-right: 12px; }
+
+/* ---------- Partes, comarca, observações ---------- */
+.partes { display: grid; gap: 12px; }
+.partes-polo { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.partes-titulo { font-weight: 600; font-size: .85rem; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .02em; }
+.partes-lista { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.partes-lista li { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.partes-add { display: flex; gap: 8px; }
+.partes-add .entrada { flex: 1; min-width: 0; }
+.combo { position: relative; }
+.combo-lista { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); max-height: 260px; overflow: auto; margin: 0; padding: 4px;
+  list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, .14); }
+.combo-lista li { padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+.combo-lista li:hover, .combo-lista li.foco { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.nova-obs { display: grid; gap: 8px; margin-bottom: 14px; }
+.nova-obs .btn { justify-self: end; }
+.tempo li.observacao { border-left-color: #F59E0B; }
+.processo-achado { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, #16A34A 8%, var(--surface)); color: var(--text); }
+.processo-achado svg { color: #16A34A; margin-top: 2px; flex: none; }

@@ -10,6 +10,7 @@ import { ClienteRapido } from './ClienteForm.jsx'
 import { AUD_VAZIA, CamposAudiencia, validarAudiencia } from '../components/Audiencias.jsx'
 import { montarISO } from '../lib/audiencia.js'
 import { RITOS, inferirRito } from '../lib/prazo.js'
+import { CampoComarca, CamposPartes } from '../components/CamposProcesso.jsx'
 
 const VAZIO = {
   numero_cnj: '', cliente_id: '', polo: 'reu', parte_contraria: '', tribunal: '', orgao_julgador: '', comarca: '', rito: '', instancia: '1g',
@@ -39,17 +40,25 @@ export default function ProcessoForm() {
   const [listaClientes, setListaClientes] = useState([])
   const [comAud, setComAud] = useState(false)
   const [aud, setAud] = useState(AUD_VAZIA)
+  const [partes, setPartes] = useState([]) // todas menos o cliente principal
   const setA = (k, v) => setAud(x => ({ ...x, [k]: v }))
 
   useEffect(() => { if (clientes) setListaClientes(clientes) }, [clientes])
   useEffect(() => {
-    if (existente) setF({ ...VAZIO, ...existente, valor_causa: existente.valor_causa ? mascararMoeda(Math.round(existente.valor_causa * 100)) : '' })
+    if (existente) {
+      setF({ ...VAZIO, ...existente, valor_causa: existente.valor_causa ? mascararMoeda(Math.round(existente.valor_causa * 100)) : '' })
+      setPartes((existente.partes || []).filter(x => x.cliente_id !== existente.cliente_id))
+    }
     else if (!editando && (sp.get('cliente') || sp.get('numero'))) {
       // Vindo da busca no DJEN: número, polo, parte contrária, vara e classe já preenchidos (confira antes de salvar)
       setF(v => ({ ...v,
         cliente_id: sp.get('cliente') || v.cliente_id, numero_cnj: sp.get('numero') || v.numero_cnj,
         polo: sp.get('polo') || v.polo, parte_contraria: sp.get('parte') || v.parte_contraria,
         orgao_julgador: sp.get('orgao') || v.orgao_julgador, classe: sp.get('classe') || v.classe }))
+      if (sp.get('parte')) {
+        const contra = (sp.get('polo') || 'reu') === 'autor' ? 'passivo' : 'ativo'
+        setPartes(sp.get('parte').split(/\s*[,;]\s*|\s+e\s+/).filter(Boolean).map(nome => ({ polo: contra, nome })))
+      }
     }
   }, [existente, editando, sp])
 
@@ -81,7 +90,7 @@ export default function ProcessoForm() {
     if (temErro) return
     setSalvando(true); setErro('')
     try {
-      const salvo = await api.salvarProcesso({ ...f, id: editando ? id : undefined, valor_causa: lerMoeda(f.valor_causa) }, editando ? [] : colegas)
+      const salvo = await api.salvarProcesso({ ...f, id: editando ? id : undefined, valor_causa: lerMoeda(f.valor_causa), partes }, editando ? [] : colegas)
       if (!editando && comAud) await api.salvarAudiencia({ ...aud, processo_id: salvo.id, data_hora: montarISO(aud.dia, aud.hora) })
       toast(editando ? 'Processo atualizado.' : comAud ? 'Processo e audiência cadastrados.' : 'Processo cadastrado.')
       nav(`/processos/${salvo.id}`, { replace: true })
@@ -119,12 +128,17 @@ export default function ProcessoForm() {
         </Campo>
         <button type="button" className="link-btn" style={{ justifySelf: 'start', marginTop: -10 }} onClick={() => setFolhaCliente(true)}>+ Cadastrar novo cliente</button>
 
-        <Campo rotulo="O cliente é">
-          <Segmentado rotulo="Polo do cliente" valor={f.polo} onChange={v => set('polo', v)} opcoes={[['reu', 'Réu'], ['autor', 'Autor']]} />
+        <Campo rotulo="O cliente está no">
+          <Segmentado rotulo="Polo do cliente" valor={f.polo} onChange={v => {
+            set('polo', v)
+            // Ao trocar o polo do cliente, as demais partes trocam de lado junto
+            setPartes(ps => ps.map(x => ({ ...x, polo: x.polo === 'ativo' ? 'passivo' : 'ativo' })))
+          }} opcoes={[['reu', 'Polo passivo (réu)'], ['autor', 'Polo ativo (autor)']]} />
         </Campo>
 
-        <Campo rotulo="Parte contrária">
-          <input className="entrada" value={f.parte_contraria || ''} onChange={e => set('parte_contraria', e.target.value)} autoComplete="off" />
+        <Campo rotulo="Partes" ajuda="Inclua todos os autores e réus (litisconsórcio). Se outra parte também for cliente do escritório, escolha o nome na lista.">
+          <CamposPartes partes={partes} setPartes={setPartes} polo={f.polo} clientes={listaClientes}
+            cliente={listaClientes.find(c => c.id === f.cliente_id)} />
         </Campo>
 
         <div className="duas">
@@ -142,8 +156,9 @@ export default function ProcessoForm() {
           <input className="entrada" value={f.orgao_julgador || ''} onChange={e => set('orgao_julgador', e.target.value)} placeholder="Ex.: 5ª Vara do Sistema dos Juizados Especiais do Consumidor" />
         </Campo>
 
-        <Campo rotulo="Comarca / subseção" ajuda="Usada para aplicar suspensões de uma comarca específica. O DataJud preencherá sozinho quando a consulta estiver ligada.">
-          <input className="entrada" value={f.comarca || ''} onChange={e => set('comarca', e.target.value)} placeholder="Ex.: Salvador" />
+        <Campo rotulo={(f.tribunal || '').toUpperCase() === 'TJSP' ? 'Foro / comarca' : (f.tribunal || '').toUpperCase().startsWith('TRF') ? 'Subseção judiciária' : 'Comarca'}
+          ajuda="Escolha na lista do tribunal. Define as suspensões e os feriados locais. Se ficar em branco, o DataJud preenche quando trouxer o processo.">
+          <CampoComarca tribunal={f.tribunal} valor={f.comarca} onChange={v => set('comarca', v)} />
         </Campo>
 
         <Campo rotulo="Instância" ajuda="Define quais suspensões valem para o processo (ex.: TJBA 1º grau/Juizados x 2º grau/Turmas Recursais). Quando o processo subir em recurso, troque aqui: os prazos abertos são recalculados.">
@@ -170,11 +185,15 @@ export default function ProcessoForm() {
           </Campo>
         </div>
 
-        <Campo rotulo="Situação">
-          <select className="entrada" value={f.situacao} onChange={e => set('situacao', e.target.value)}>
-            {Object.entries(SITUACOES).map(([v, r]) => <option key={v} value={v}>{r}</option>)}
-          </select>
-        </Campo>
+        {f.situacao === 'baixado' ? (
+          <div className="aviso info"><Icone nome="info" /><div>Processo baixado. Para reativar, use o botão na página do processo.</div></div>
+        ) : (
+          <Campo rotulo="Situação" ajuda="Para encerrar o acompanhamento, use “Dar baixa” na página do processo.">
+            <select className="entrada" value={f.situacao} onChange={e => set('situacao', e.target.value)}>
+              {Object.entries(SITUACOES).filter(([v]) => v !== 'baixado').map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+            </select>
+          </Campo>
+        )}
 
         {!editando && outros.length > 0 && (
           <Campo rotulo="Advogados do processo" ajuda="Por sigilo, só quem estiver marcado aqui enxerga o processo. Você já está incluído.">

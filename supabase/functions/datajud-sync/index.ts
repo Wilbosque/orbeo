@@ -604,8 +604,10 @@ async function destinatarios(servico: any) {
   const { data: prefs } = await servico.from('notif_preferencias').select('*').in('advogado_id', advogados.length ? advogados : ['00000000-0000-0000-0000-000000000000'])
   const prefsDe = new Map<string, Prefs>(advogados.map(a => [a, { ...PREFS_PADRAO, ...((prefs || []).find((p: any) => p.advogado_id === a) || {}) }]))
   const procsDe = new Map<string, Set<string>>(advogados.map(a => [a, new Set<string>()]))
-  const { data: vinc } = await servico.from('processo_advogados').select('processo_id,advogado_id').in('advogado_id', advogados.length ? advogados : ['00000000-0000-0000-0000-000000000000'])
-  for (const v of vinc || []) procsDe.get(v.advogado_id)?.add(v.processo_id)
+  const { data: vinc } = await servico.from('processo_advogados').select('processo_id,advogado_id,processos!inner(escritorio_id,situacao)').in('advogado_id', advogados.length ? advogados : ['00000000-0000-0000-0000-000000000000'])
+  const membroDe = new Set(ativos.map((m: any) => `${m.advogado_id}|${m.escritorio_id}`))
+  for (const v of vinc || []) if (membroDe.has(`${v.advogado_id}|${v.processos?.escritorio_id}`) && ['ativo', 'suspenso'].includes(v.processos?.situacao))
+    procsDe.get(v.advogado_id)?.add(v.processo_id)
   // "Todos os processos do escritório": só para quem tem visão geral naquele escritório
   const escsGerais = new Map<string, string[]>()
   for (const m of ativos) if (m.visao_geral && prefsDe.get(m.advogado_id)?.escopo === 'escritorio')
@@ -633,25 +635,29 @@ async function rodadaDescoberta(servico: any) {
   const pausa = Math.ceil(60_000 / teto)
 
   // Clientes com advogado vinculado; nomes de busca = os cadastrados no cliente, ou a razão social se for PJ sem nenhum
-  const { data: vinc } = await servico.from('cliente_advogados').select('cliente_id,advogado_id')
-  const advsDe = new Map<string, string[]>()
-  for (const v of vinc || []) advsDe.set(v.cliente_id, [...(advsDe.get(v.cliente_id) || []), v.advogado_id])
-  const { data: todosCli } = await servico.from('clientes').select('id').not('escritorio_id', 'is', null)
-  for (const c of todosCli || []) if (!advsDe.has(c.id)) advsDe.set(c.id, [])
-  const ids = [...advsDe.keys()]
+  // Só clientes com nomes monitorados (a opção "Monitorar publicações no DJEN pelo nome" no cadastro)
+  const { data: termos } = await servico.from('monitoramentos').select('cliente_id,valor').eq('tipo', 'nome_parte').eq('ativo', true).not('cliente_id', 'is', null)
+  const ids = [...new Set((termos || []).map((t: any) => t.cliente_id))] as string[]
   if (!ids.length) return { buscas: 0, novos: 0 }
-  const { data: clientes } = await servico.from('clientes').select('id,tipo,nome,escritorio_id').in('id', ids)
+  const { data: clientes } = await servico.from('clientes').select('id,tipo,nome,escritorio_id,copiado_de').in('id', ids)
+  // Recebe o aviso quem atende o cliente E é membro ativo do escritório dele
+  const { data: membrosAtivos } = await servico.from('escritorio_membros').select('advogado_id,escritorio_id').eq('ativo', true)
+  const membro = new Set((membrosAtivos || []).map((m: any) => `${m.advogado_id}|${m.escritorio_id}`))
+  const escCli = new Map((clientes || []).map((c: any) => [c.id, c.escritorio_id]))
+  const { data: vinc } = await servico.from('cliente_advogados').select('cliente_id,advogado_id').in('cliente_id', ids)
+  const advsDe = new Map<string, string[]>()
+  for (const v of vinc || []) if (membro.has(`${v.advogado_id}|${escCli.get(v.cliente_id)}`))
+    advsDe.set(v.cliente_id, [...(advsDe.get(v.cliente_id) || []), v.advogado_id])
   // Quem tem visão geral e escolheu acompanhar o escritório todo também recebe
   const ctxDest = await destinatarios(servico)
   for (const c of clientes || []) for (const [a, escs] of ctxDest.escsGerais)
     if (escs.includes(c.escritorio_id) && !(advsDe.get(c.id) || []).includes(a)) advsDe.set(c.id, [...(advsDe.get(c.id) || []), a])
   const escDe = new Map((clientes || []).map((c: any) => [c.id, c.escritorio_id]))
-  const { data: termos } = await servico.from('monitoramentos').select('cliente_id,valor').eq('tipo', 'nome_parte').eq('ativo', true).in('cliente_id', ids)
+  const origemDe = new Map((clientes || []).filter((c: any) => c.copiado_de).map((c: any) => [c.id, c.copiado_de]))
   const pares: { cliente_id: string; termo: string }[] = []
   for (const c of clientes || []) {
     if (!(advsDe.get(c.id) || []).length) continue // ninguém para avisar
     const meus = [...new Set((termos || []).filter((t: any) => t.cliente_id === c.id).map((t: any) => String(t.valor).trim().toUpperCase()))]
-    if (!meus.length && c.tipo === 'PJ') meus.push(String(c.nome).trim().toUpperCase())
     for (const termo of meus) if (termo.length >= 4) pares.push({ cliente_id: c.id, termo })
   }
   const { data: feitas } = await servico.from('descoberta_buscas').select('*')
@@ -672,6 +678,12 @@ async function rodadaDescoberta(servico: any) {
         // Só o que ainda NÃO está no escritório do cliente
         const { data: existentes } = await servico.from('processos').select('numero_cnj').eq('escritorio_id', escDe.get(p.cliente_id)).in('numero_cnj', grupos.map(g => g.numero_cnj))
         const ja = new Set((existentes || []).map((e: any) => e.numero_cnj))
+        // Cliente copiado de outro escritório (saída de advogado): processos que ficaram lá não são "novos"
+        const origem = origemDe.get(p.cliente_id)
+        if (origem) {
+          const { data: daOrigem } = await servico.from('processos').select('numero_cnj').eq('cliente_id', origem).in('numero_cnj', grupos.map(g => g.numero_cnj))
+          for (const e of daOrigem || []) ja.add(e.numero_cnj)
+        }
         for (const g of grupos.filter(g => !ja.has(g.numero_cnj))) {
           const { data: d } = await servico.from('descobertas').upsert({
             cliente_id: p.cliente_id, numero_cnj: g.numero_cnj, tribunal: g.tribunal, orgao_julgador: g.orgao_julgador, classe: g.classe,
@@ -700,13 +712,50 @@ async function rodadaDescoberta(servico: any) {
   return { buscas, novos, avisados, restantes: Math.max(0, fila.length - buscas) }
 }
 
+const TRIBUNAIS_COMARCAS = [
+  ...['AC','AL','AP','AM','BA','CE','DFT','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u => 'TJ' + u),
+  ...Array.from({ length: 24 }, (_, i) => `TRT${i + 1}`), ...Array.from({ length: 6 }, (_, i) => `TRF${i + 1}`),
+]
+/** Catálogo de comarcas/subseções: municípios-sede das varas de cada tribunal, segundo o DataJud (1x por mês) */
+async function rodadaComarcas(servico: any) {
+  const inicio = Date.now()
+  const chave = Deno.env.get('DATAJUD_API_KEY') || CHAVE_PADRAO
+  const { data: feitos } = await servico.from('comarcas_sync').select('tribunal,em,erro')
+  const recente = new Set((feitos || []).filter((f: any) => !f.erro && f.em && Date.now() - new Date(f.em).getTime() < 20 * 86400_000).map((f: any) => f.tribunal))
+  const resultado: Record<string, number | string> = {}
+  for (const t of TRIBUNAIS_COMARCAS.filter(t => !recente.has(t))) {
+    if (Date.now() - inicio > TEMPO_MAXIMO_RODADA_MS) break
+    try {
+      const r = await fetch(`${BASE}/${aliasDataJud(t)}/_search`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `APIKey ${chave}` },
+        body: JSON.stringify({ size: 0, aggs: { m: { terms: { field: 'orgaoJulgador.codigoMunicipioIBGE', size: 3000 } } } }),
+      })
+      if (!r.ok) throw new Error(`DataJud respondeu ${r.status}`)
+      const j = await r.json()
+      const codigos = (j?.aggregations?.m?.buckets || []).map((b: any) => Number(b.key)).filter((n: number) => n > 1000000)
+      if (!codigos.length) throw new Error('DataJud não trouxe municípios')
+      const { data: n } = await servico.rpc('gravar_comarcas_datajud', { p_tribunal: t, p_codigos: codigos })
+      await servico.from('comarcas_sync').upsert({ tribunal: t, em: new Date().toISOString(), total: codigos.length, erro: null })
+      resultado[t] = n ?? codigos.length
+    } catch (e) {
+      await servico.from('comarcas_sync').upsert({ tribunal: t, em: new Date().toISOString(), total: null, erro: (e as Error).message })
+      resultado[t] = (e as Error).message
+    }
+    await dormir(1200)
+  }
+  return { tribunais: resultado }
+}
+
 /** Processos novos (descobertas) ainda não avisados: vai direto ao fim da busca diária e também em cada rodada */
 async function avisarDescobertas(servico: any, ctx?: Awaited<ReturnType<typeof destinatarios>>) {
   const { advogados, prefsDe } = ctx || await destinatarios(servico)
   const quem = advogados.filter(a => prefsDe.get(a)!.novos)
   if (!quem.length) return 0
-  const { data: descs } = await servico.from('descoberta_avisos').select('id,advogado_id,descoberta_id,descobertas(numero_cnj,tribunal,clientes(nome,nome_fantasia))')
+  const { data: membrosAtivos } = await servico.from('escritorio_membros').select('advogado_id,escritorio_id').eq('ativo', true)
+  const membro = new Set((membrosAtivos || []).map((m: any) => `${m.advogado_id}|${m.escritorio_id}`))
+  const { data: descsTodas } = await servico.from('descoberta_avisos').select('id,advogado_id,descoberta_id,descobertas(numero_cnj,tribunal,clientes(nome,nome_fantasia,escritorio_id))')
     .eq('status', 'pendente').in('advogado_id', quem).gte('notificado_em', new Date(Date.now() - 7 * 86400_000).toISOString())
+  const descs = (descsTodas || []).filter((d: any) => membro.has(`${d.advogado_id}|${d.descobertas?.clientes?.escritorio_id}`))
   let enviados = 0
   for (const a of quem) {
     const meus = (descs || []).filter((x: any) => x.advogado_id === a)
@@ -916,6 +965,12 @@ async function tratar(req: Request) {
     const { data: ok } = await servico.rpc('cron_segredo_confere', { p: req.headers.get('x-cron-secret') || '' })
     if (!ok) return falha('Não autorizado.', 401)
     return resposta(await rodadaAvisos(servico))
+  }
+
+  if (corpo.acao === 'rodada_comarcas') {
+    const { data: ok } = await servico.rpc('cron_segredo_confere', { p: req.headers.get('x-cron-secret') || '' })
+    if (!ok) return falha('Não autorizado.', 401)
+    return resposta(await rodadaComarcas(servico))
   }
 
   if (corpo.acao === 'rodada_descoberta') {

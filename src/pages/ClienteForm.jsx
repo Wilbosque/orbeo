@@ -6,7 +6,7 @@ import { Campo, Carregando, Erro, Segmentado, Topo, useCarregar, useToast } from
 import { formatarDoc, validarDoc } from '../lib/documento.js'
 import { mascararTelefone } from '../lib/formato.js'
 
-const VAZIO = { tipo: 'PJ', nome: '', nome_fantasia: '', cpf_cnpj: '', email: '', telefone: '', observacoes: '' }
+const VAZIO = { tipo: 'PJ', nome: '', nome_fantasia: '', cpf_cnpj: '', email: '', telefone: '', contato_nome: '', observacoes: '' }
 
 // Sugestão de termos para o DJEN: nome sem "LTDA", "S.A." etc. e nome fantasia
 export function sugerirTermos(c) {
@@ -34,6 +34,19 @@ function CamposCliente({ f, set, tocado, erros }) {
           value={f.cpf_cnpj || ''} onChange={e => set('cpf_cnpj', formatarDoc(e.target.value, f.tipo))}
           placeholder={f.tipo === 'PJ' ? '00.000.000/0000-00' : '000.000.000-00'} autoComplete="off" />
       </Campo>
+      <div className="duas">
+        <Campo rotulo="E-mail para contato" erro={erros.email}>
+          <input className={`entrada ${erros.email ? 'invalida' : ''}`} type="email" inputMode="email" value={f.email || ''} onChange={e => set('email', e.target.value.trim())} autoComplete="off" placeholder="nome@empresa.com.br" />
+        </Campo>
+        <Campo rotulo="Telefone / WhatsApp">
+          <input className="entrada" inputMode="tel" value={f.telefone || ''} onChange={e => set('telefone', mascararTelefone(e.target.value))} autoComplete="off" placeholder="(71) 99999-9999" />
+        </Campo>
+      </div>
+      {f.tipo === 'PJ' && (
+        <Campo rotulo="Pessoa de contato" ajuda="Quem fala pela empresa com o escritório.">
+          <input className="entrada" value={f.contato_nome || ''} onChange={e => set('contato_nome', e.target.value)} autoComplete="off" />
+        </Campo>
+      )}
     </>
   )
 }
@@ -43,6 +56,7 @@ function validar(f) {
   return {
     nome: !f.nome.trim() ? 'Informe o nome.' : '',
     cpf_cnpj: docCompleto && !validarDoc(f.cpf_cnpj, f.tipo) ? `${f.tipo === 'PF' ? 'CPF' : 'CNPJ'} inválido. Confira os dígitos.` : '',
+    email: f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email) ? 'E-mail inválido.' : '',
   }
 }
 
@@ -56,7 +70,7 @@ export function ClienteRapido({ aoSalvar }) {
   const erros = validar(f)
   async function salvar() {
     setTocado({ nome: true })
-    if (erros.nome || erros.cpf_cnpj) return
+    if (erros.nome || erros.cpf_cnpj || erros.email) return
     setSalvando(true)
     try { aoSalvar(await api.salvarCliente(f, f.tipo === 'PJ' ? sugerirTermos(f) : [])) }
     catch (e) { setErro(e.message) } finally { setSalvando(false) }
@@ -110,7 +124,7 @@ export default function ClienteForm() {
   async function salvar(e) {
     e.preventDefault()
     setTocado({ nome: true })
-    if (erros.nome || erros.cpf_cnpj) return
+    if (erros.nome || erros.cpf_cnpj || erros.email) return
     setSalvando(true); setErro('')
     try {
       const salvo = await api.salvarCliente({ ...f, id: editando ? id : undefined }, monitorar ? termos : [])
@@ -129,14 +143,6 @@ export default function ClienteForm() {
       <form className="form" onSubmit={salvar} noValidate>
         {erro && <div className="aviso erro" role="alert"><Icone nome="alerta" />{erro}</div>}
         <CamposCliente f={f} set={set} tocado={tocado} erros={erros} />
-        <div className="duas">
-          <Campo rotulo="E-mail">
-            <input className="entrada" type="email" inputMode="email" value={f.email || ''} onChange={e => set('email', e.target.value)} autoComplete="off" />
-          </Campo>
-          <Campo rotulo="Telefone">
-            <input className="entrada" inputMode="tel" value={f.telefone || ''} onChange={e => set('telefone', mascararTelefone(e.target.value))} autoComplete="off" />
-          </Campo>
-        </div>
 
         <label className="caixa-check">
           <input type="checkbox" checked={monitorar} onChange={e => setMonitorar(e.target.checked)} />

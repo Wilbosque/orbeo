@@ -65,6 +65,7 @@ export default function Processos() {
         <button className={`chip ${!situacao ? 'ativo' : ''}`} onClick={() => set('situacao', '')}>Todos</button>
         <button className={`chip ${situacao === 'ativo' ? 'ativo' : ''}`} onClick={() => set('situacao', situacao === 'ativo' ? '' : 'ativo')}>Ativos</button>
         <button className={`chip ${situacao === 'arquivado' ? 'ativo' : ''}`} onClick={() => set('situacao', situacao === 'arquivado' ? '' : 'arquivado')}>Arquivados</button>
+        <button className={`chip ${situacao === 'baixado' ? 'ativo' : ''}`} onClick={() => set('situacao', situacao === 'baixado' ? '' : 'baixado')}>Baixados</button>
         <button className={`chip ${novidades ? 'ativo' : ''}`} onClick={() => set('novidades', novidades ? '' : '1')}>Com novidades</button>
         <button className={`chip ${polo === 'reu' ? 'ativo' : ''}`} onClick={() => set('polo', polo === 'reu' ? '' : 'reu')}>Como réu</button>
         <button className={`chip ${polo === 'autor' ? 'ativo' : ''}`} onClick={() => set('polo', polo === 'autor' ? '' : 'autor')}>Como autor</button>
