@@ -481,3 +481,5 @@ body.estagiario .so-editor { display: none !important; }
 .processo-achado { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; padding: 10px 12px; border-radius: 10px;
   background: color-mix(in srgb, #16A34A 8%, var(--surface)); color: var(--text); }
 .processo-achado svg { color: #16A34A; margin-top: 2px; flex: none; }
+.tempo.obs { margin: 0; }
+.tempo.obs li:last-child { padding-bottom: 4px; }

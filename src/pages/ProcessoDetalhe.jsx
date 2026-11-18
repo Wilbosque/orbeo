@@ -64,14 +64,46 @@ function NovaObservacao({ processoId, aoSalvar }) {
 
 const quandoObs = iso => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
 
-function LinhaDoTempo({ processoId, aoVer, aoCriarPrazo }) {
+/** Observações da equipe: lista própria, separada das movimentações do tribunal */
+function Observacoes({ processoId }) {
   const { perfil } = usePerfil()
   const toast = useToast()
-  const r = useCarregar(() => api.linhaDoTempo(processoId), [processoId])
+  const r = useCarregar(() => api.listarObservacoes(processoId), [processoId])
+  const [nova, setNova] = useState(false)
+  const [todas, setTodas] = useState(false)
   async function apagar(m) {
     if (!window.confirm('Excluir esta observação?')) return
     try { await api.excluirObservacao(m.item_id); toast('Observação excluída.'); r.recarregar() } catch (e) { toast(e.message, 'erro') }
   }
+  const lista = r.dados || []
+  const visiveis = todas ? lista : lista.slice(0, 3)
+  return (
+    <>
+      <div className="secao"><h2>Observações{lista.length ? ` (${lista.length})` : ''}</h2>
+        <button className="btn pequeno" onClick={() => setNova(v => !v)}>{nova ? 'Fechar' : '+ Observação'}</button></div>
+      {nova && <NovaObservacao processoId={processoId} aoSalvar={() => { setNova(false); r.recarregar() }} />}
+      {r.erro ? <Erro erro={r.erro} /> : r.carregando && !r.dados ? <Carregando n={1} /> : !lista.length ? (
+        <div className="cartao muted">Nenhuma observação registrada. Use para anotar contatos com o cliente, combinados, documentos recebidos.</div>
+      ) : (
+        <div className="cartao">
+          <ul className="tempo obs">
+            {visiveis.map(m => (
+              <li key={m.item_id} className="observacao">
+                <div className="quando">{quandoObs(m.quando)} · <b>{m.extra?.autor_nome || 'usuário'}</b></div>
+                <div className="detalhe" style={{ whiteSpace: 'pre-wrap', color: 'var(--text)' }}>{m.detalhe}</div>
+                {m.extra?.autor_id === perfil.id && <button className="link-btn" style={{ marginTop: 4 }} onClick={() => apagar(m)}>Excluir</button>}
+              </li>
+            ))}
+          </ul>
+          {lista.length > 3 && <button className="link-btn" onClick={() => setTodas(v => !v)}>{todas ? 'Mostrar menos' : `Ver todas (${lista.length})`}</button>}
+        </div>
+      )}
+    </>
+  )
+}
+
+function LinhaDoTempo({ processoId, aoVer, aoCriarPrazo }) {
+  const r = useCarregar(() => api.linhaDoTempo(processoId), [processoId])
   // Depois de mostrar, marca os andamentos como vistos (os "novos" continuam destacados nesta abertura)
   useEffect(() => {
     if (r.dados?.some(m => m.nova)) api.marcarVistas(processoId).then(aoVer).catch(() => {})
@@ -80,7 +112,6 @@ function LinhaDoTempo({ processoId, aoVer, aoCriarPrazo }) {
   if (r.carregando && !r.dados) return <Carregando n={2} />
   return (
     <>
-    <NovaObservacao processoId={processoId} aoSalvar={r.recarregar} />
     {!r.dados.length ? (
       <Vazio icone="relogio" titulo="Sem movimentações ainda"
         texto="Nenhum andamento no DataJud nem publicação no DJEN até agora. Use “Atualizar agora” ou aguarde a consulta automática da madrugada." />
@@ -89,17 +120,10 @@ function LinhaDoTempo({ processoId, aoVer, aoCriarPrazo }) {
       {r.dados.map(m => (
         <li key={m.item_id} className={`${m.origem} ${m.nova ? 'nova' : ''}`}>
           <div className="quando">
-            {m.origem === 'observacao'
-              ? <>{quandoObs(m.quando)} · Observação de <b>{m.extra?.autor_nome || 'usuário'}</b></>
-              : <>{new Date(m.quando).toLocaleDateString('pt-BR')} · {m.origem === 'publicacao' ? 'Publicação DJEN' : 'Andamento DataJud'}</>}
+            {new Date(m.quando).toLocaleDateString('pt-BR')} · {m.origem === 'publicacao' ? 'Publicação DJEN' : 'Andamento DataJud'}
             {m.nova && <span className="selo novo" style={{ marginLeft: 6, height: 18 }}>nova</span>}
           </div>
-          {m.origem === 'observacao' ? (
-            <>
-              <div className="detalhe" style={{ whiteSpace: 'pre-wrap', color: 'var(--text)' }}>{m.detalhe}</div>
-              {m.extra?.autor_id === perfil.id && <button className="link-btn" style={{ marginTop: 4 }} onClick={() => apagar(m)}>Excluir</button>}
-            </>
-          ) : m.origem === 'publicacao' ? <Publicacao m={m} aoCriarPrazo={aoCriarPrazo} /> : (
+          {m.origem === 'publicacao' ? <Publicacao m={m} aoCriarPrazo={aoCriarPrazo} /> : (
             <>
               <div className="titulo">{m.titulo}</div>
               {m.detalhe && <div className="detalhe">{m.detalhe}</div>}
@@ -264,7 +288,7 @@ export default function ProcessoDetalhe() {
 
       <div className="acoes-processo">
         <button className="btn" onClick={() => setVerMov(true)}>
-          <Icone nome="relogio" />Movimentações e observações{p.novidades > 0 ? ` (${p.novidades} nova${p.novidades > 1 ? 's' : ''})` : ''}
+          <Icone nome="relogio" />Ver movimentações{p.novidades > 0 ? ` (${p.novidades} nova${p.novidades > 1 ? 's' : ''})` : ''}
         </button>
         <button className="btn" onClick={() => atualizar(false)} disabled={buscando} title="Consultar o DataJud agora">
           <Icone nome="atualizar" className={buscando ? 'girando' : ''} />{buscando ? 'Consultando…' : 'Atualizar agora'}
@@ -298,6 +322,8 @@ export default function ProcessoDetalhe() {
           {p.observacoes && <div><dt>Observações</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{p.observacoes}</dd></div>}
         </dl>
       </div>
+
+      <Observacoes key={p.situacao} processoId={id} />
 
       <div className="secao"><h2>Audiências</h2><button className="btn pequeno so-editor" onClick={() => setFormAud({})}>+ Audiência</button></div>
       {auds.dados?.length ? (
@@ -352,7 +378,7 @@ export default function ProcessoDetalhe() {
         {cumprir && <CumprirForm z={cumprir} aoConfirmar={async (d, obs) => { await api.cumprirPrazo(cumprir.id, d, obs); toast('Prazo marcado como cumprido.'); setCumprir(null); przs.recarregar() }} />}
       </Folha>
 
-      <Folha titulo="Movimentações e observações" aberta={verMov} fechar={() => setVerMov(false)}>
+      <Folha titulo="Movimentações" aberta={verMov} fechar={() => setVerMov(false)}>
         <LinhaDoTempo processoId={id} aoVer={() => r.recarregar()} aoCriarPrazo={m => {
           const sug = prazoNoTexto(m.detalhe)
           setVerMov(false)

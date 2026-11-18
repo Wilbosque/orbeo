@@ -228,16 +228,30 @@ export function mascaraCNJ(n: string) {
 // ---------------------------------------------------------------------------
 class ErroDataJud extends Error { constructor(m: string, public status = 0, public parar = false) { super(m) } }
 
-async function consultarDataJud(alias: string, numero20: string) {
+/** POST no DataJud com até 3 tentativas quando o CNJ responde 502/503/504 (instabilidade do lado deles) */
+async function postDataJud(alias: string, corpo: unknown, tentativas = 3) {
   const chave = Deno.env.get('DATAJUD_API_KEY') || CHAVE_PADRAO
-  const r = await fetch(`${BASE}/${alias}/_search`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `APIKey ${chave}` },
-    body: JSON.stringify({ query: { match: { numeroProcesso: numero20 } }, size: 10 }),
-  })
+  let r: Response | null = null
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      r = await fetch(`${BASE}/${alias}/_search`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `APIKey ${chave}` },
+        body: JSON.stringify(corpo), signal: AbortSignal.timeout(40_000),
+      })
+      if (![502, 503, 504].includes(r.status)) return r
+    } catch (_) { r = null } // tempo esgotado ou conexão caiu: tenta de novo
+    await dormir(1500 * (i + 1) + Math.random() * 1000)
+  }
+  if (!r) throw new ErroDataJud('O DataJud não respondeu (tempo esgotado). É instabilidade do CNJ; a consulta é refeita na próxima rodada.', 504)
+  return r
+}
+
+async function consultarDataJud(alias: string, numero20: string) {
+  const r = await postDataJud(alias, { query: { match: { numeroProcesso: numero20 } }, size: 10 })
   if (r.status === 401 || r.status === 403) throw new ErroDataJud('O DataJud recusou a chave de acesso. A chave pública pode ter mudado: veja a chave atual na wiki do DataJud e cadastre em Edge Functions → Secrets → DATAJUD_API_KEY.', r.status, true)
   if (r.status === 429) throw new ErroDataJud('Limite de consultas do DataJud atingido. A rodada continua na próxima execução.', 429, true)
   if (r.status === 404) throw new ErroDataJud('Tribunal não disponível na API pública do DataJud.', 404)
+  if ([502, 503, 504].includes(r.status)) throw new ErroDataJud(`O DataJud está instável agora (erro ${r.status}, do lado do CNJ). Tentei 3 vezes; a consulta é refeita sozinha na próxima rodada. Seus dados no Orbeo não foram afetados.`, r.status, true)
   if (!r.ok) throw new ErroDataJud(`O DataJud respondeu com erro ${r.status}.`, r.status, r.status >= 500)
   const j = await r.json()
   return (j?.hits?.hits || []) as any[]
@@ -719,18 +733,24 @@ const TRIBUNAIS_COMARCAS = [
 /** Catálogo de comarcas/subseções: municípios-sede das varas de cada tribunal, segundo o DataJud (1x por mês) */
 async function rodadaComarcas(servico: any) {
   const inicio = Date.now()
-  const chave = Deno.env.get('DATAJUD_API_KEY') || CHAVE_PADRAO
   const { data: feitos } = await servico.from('comarcas_sync').select('tribunal,em,erro')
   const recente = new Set((feitos || []).filter((f: any) => !f.erro && f.em && Date.now() - new Date(f.em).getTime() < 20 * 86400_000).map((f: any) => f.tribunal))
   const resultado: Record<string, number | string> = {}
   for (const t of TRIBUNAIS_COMARCAS.filter(t => !recente.has(t))) {
     if (Date.now() - inicio > TEMPO_MAXIMO_RODADA_MS) break
     try {
-      const r = await fetch(`${BASE}/${aliasDataJud(t)}/_search`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `APIKey ${chave}` },
-        body: JSON.stringify({ size: 0, aggs: { m: { terms: { field: 'orgaoJulgador.codigoMunicipioIBGE', size: 3000 } } } }),
-      })
-      if (!r.ok) throw new Error(`DataJud respondeu ${r.status}`)
+      // Agregar o índice inteiro estoura o tempo do CNJ (504) nos tribunais grandes: olha só o que andou nos últimos 90 dias,
+      // o que já cobre todas as varas em funcionamento; se ainda assim demorar, tenta com 30 dias.
+      let r: Response | null = null
+      for (const dias of [90, 30]) {
+        r = await postDataJud(aliasDataJud(t)!, {
+          size: 0, track_total_hits: false, timeout: '25s',
+          query: { range: { dataHoraUltimaAtualizacao: { gte: `now-${dias}d` } } },
+          aggs: { m: { terms: { field: 'orgaoJulgador.codigoMunicipioIBGE', size: 3000 } } },
+        }, 2)
+        if (r.ok) break
+      }
+      if (!r || !r.ok) throw new Error(`DataJud respondeu ${r?.status} (instabilidade do CNJ; tenta de novo na próxima rodada)`)
       const j = await r.json()
       const codigos = (j?.aggregations?.m?.buckets || []).map((b: any) => Number(b.key)).filter((n: number) => n > 1000000)
       if (!codigos.length) throw new Error('DataJud não trouxe municípios')

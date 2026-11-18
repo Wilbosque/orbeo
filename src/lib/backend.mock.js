@@ -283,12 +283,18 @@ export async function removerAdvogado(pid, aid) {
   await atraso(); db.processo_advogados = db.processo_advogados.filter(x => !(x.processo_id === pid && x.advogado_id === aid)); gravar()
 }
 
+export async function listarObservacoes(pid) {
+  await atraso()
+  return (db.observacoes || []).filter(o => o.processo_id === pid).map(o => ({ origem: 'observacao', item_id: o.id, quando: o.criado_em, titulo: 'Observação',
+    detalhe: o.texto, nova: false, anotacoes: [], extra: { autor_id: o.autor_id, autor_nome: db.advogados.find(a => a.id === o.autor_id)?.nome } }))
+    .sort((a, b) => b.quando.localeCompare(a.quando))
+}
 export async function linhaDoTempo(pid) {
   await atraso()
   const obs = (db.observacoes || []).filter(o => o.processo_id === pid).map(o => ({ origem: 'observacao', item_id: o.id, quando: o.criado_em, titulo: 'Observação',
     detalhe: o.texto, nova: false, anotacoes: [], extra: { autor_id: o.autor_id, autor_nome: db.advogados.find(a => a.id === o.autor_id)?.nome } }))
-  if (pid !== 'p1') return obs.sort((a, b) => b.quando.localeCompare(a.quando))
-  return [...obs, 
+  if (pid !== 'p1') return []
+  return [
     { origem: 'publicacao', item_id: 'x1', quando: '2026-11-10T12:00:00-03:00', titulo: 'Despacho', nova: !db._pubLida,
       detalhe: 'PODER JUDICIÁRIO DO ESTADO DA BAHIA\n5ª VARA DO SISTEMA DOS JUIZADOS ESPECIAIS DO CONSUMIDOR\n\nDESPACHO\n\nVistos etc. Considerando a juntada da petição de ID 4512, intime-se a parte ré para, no prazo de 5 (cinco) dias, manifestar-se sobre os documentos apresentados pela parte autora, sob pena de preclusão. Após, voltem-me conclusos para sentença. Salvador, 07 de novembro de 2026. Juiz de Direito.',
       extra: { tipo_comunicacao: 'Intimação', orgao: '5ª VSJE do Consumidor', link: 'https://comunica.pje.jus.br/', disponibilizacao: '2026-11-10', status: db._pubPrazo ? 'prazo_criado' : 'nova' }, anotacoes: [] },

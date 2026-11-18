@@ -191,7 +191,11 @@ export async function removerAdvogado(processoId, advogadoId) {
 
 // ---------- Linha do tempo ----------
 export async function linhaDoTempo(processoId) {
-  return ok(await sb.from('vw_linha_do_tempo').select('*').eq('processo_id', processoId)
+  return ok(await sb.from('vw_linha_do_tempo').select('*').eq('processo_id', processoId).neq('origem', 'observacao')
+    .order('quando', { ascending: false }))
+}
+export async function listarObservacoes(processoId) {
+  return ok(await sb.from('vw_linha_do_tempo').select('*').eq('processo_id', processoId).eq('origem', 'observacao')
     .order('quando', { ascending: false }))
 }
 
